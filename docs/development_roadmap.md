@@ -31,36 +31,33 @@ The current system already includes:
 - Pytest API tests
 - Postman collection
 - Technical documentation
+- HR request/case persistence
+- Agent run persistence
+- Request retrieval endpoints
 
 ---
 
 ## Target Platform Features
 
-### 1. HR Request Management
+### Phase 1: Foundation Refactor
 
-Introduce a dedicated HR request/case model.
+Goal: prepare the system for platform-grade extensions.
 
-Planned features:
+Completed:
 
-- Create HR requests from API input
-- Store source type: API, email, webhook
-- Track request status
-- Track classified intent and confidence
-- Store selected agent and response
-- Support review and resolution states
+- Added HR request model
+- Added agent run model
+- Added request status tracking
+- Updated `/requests` pipeline to persist HR request records
+- Added API endpoints to retrieve requests and agent runs
+- Added tests for HR request and agent run retrieval endpoints
 
-Potential statuses:
+Remaining:
 
-```text
-new
-classified
-draft_generated
-needs_review
-approved
-rejected
-closed
-failed
-```
+- Improve status transition model
+- Add richer request filtering
+- Add pagination metadata
+- Add database migrations
 
 ---
 

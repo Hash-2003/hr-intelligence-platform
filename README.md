@@ -53,6 +53,8 @@ The request pipeline follows this flow:
 ```text
 POST /requests
     ↓
+Create HR request record
+    ↓
 Load STM and LTM memory
     ↓
 LLM intent classification
@@ -60,6 +62,10 @@ LLM intent classification
 Route using LangGraph conditional edges
     ↓
 Specialist agent execution
+    ↓
+Save agent run record
+    ↓
+Update HR request status and result
     ↓
 Save short-term memory
     ↓
@@ -89,6 +95,9 @@ clarification
 | POST | `/memory` | Manually add STM or LTM memory |
 | GET | `/memory/{user_id}` | Retrieve user memory |
 | GET | `/audit` | Retrieve audit logs |
+| GET | `/hr-requests` | Retrieve persisted HR request records |
+| GET | `/hr-requests/{request_id}` | Retrieve a specific HR request |
+| GET | `/hr-requests/{request_id}/agent-runs` | Retrieve agent execution records for a request |
 
 ## Setup Instructions
 
@@ -239,6 +248,43 @@ Optional filter:
 ```http
 GET /audit?user_id=user_001
 ```
+---
+
+## HR Request Retrieval Section
+
+Add this after the audit log section:
+
+### Retrieve HR Requests
+
+```http
+GET /hr-requests
+```
+
+Optional user filter:
+
+```http
+GET /hr-requests?user_id=user_001
+```
+
+This returns persisted HR request/case records created through the request pipeline.
+
+### Retrieve One HR Request
+
+```http
+GET /hr-requests/{request_id}
+```
+
+This returns the stored classification, selected agent, response, status, and timestamps for one request.
+
+### Retrieve Agent Runs
+
+```http
+GET /hr-requests/{request_id}/agent-runs
+```
+
+This returns specialist agent execution records linked to the HR request.
+
+---
 
 ## Running Tests
 
