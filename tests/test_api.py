@@ -121,3 +121,159 @@ def test_requests_endpoint_with_mocked_workflow(monkeypatch):
     assert data["agent"] == "leave_agent"
     assert data["response"] == "Mock leave response."
     assert data["memory_used"] is True
+
+def test_get_hr_requests():
+    response = client.get("/hr-requests")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert isinstance(data, list)
+
+
+def test_get_hr_request_by_id_with_mocked_workflow(monkeypatch):
+    class MockWorkflow:
+        def __init__(self, db):
+            self.db = db
+
+        def run(self, user_id: str, message: str):
+            from app.services.hr_request_service import HRRequestService
+            from uuid import uuid4
+
+            request_id = str(uuid4())
+            service = HRRequestService(self.db)
+
+            service.create_request(
+                request_id=request_id,
+                user_id=user_id,
+                message=message,
+                source_type="api",
+            )
+
+            service.update_request_result(
+                request_id=request_id,
+                intent="leave",
+                confidence=0.95,
+                selected_agent="leave_agent",
+                response="Mock leave response.",
+                status="success",
+                error_message=None,
+            )
+
+            service.create_agent_run(
+                request_id=request_id,
+                agent_name="leave_agent",
+                input_summary=message,
+                output_summary="Mock leave response.",
+                status="success",
+                error_message=None,
+            )
+
+            return {
+                "request_id": request_id,
+                "intent": "leave",
+                "confidence": 0.95,
+                "selected_agent": "leave_agent",
+                "response": "Mock leave response.",
+                "memory_used": True,
+            }
+
+    monkeypatch.setattr(
+        "app.api.routes_requests.HRWorkflow",
+        MockWorkflow,
+    )
+
+    payload = {
+        "user_id": "test_user_002",
+        "message": "I want annual leave tomorrow.",
+    }
+
+    request_response = client.post("/requests", json=payload)
+
+    assert request_response.status_code == 200
+    request_id = request_response.json()["request_id"]
+
+    response = client.get(f"/hr-requests/{request_id}")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["request_id"] == request_id
+    assert data["user_id"] == "test_user_002"
+    assert data["intent"] == "leave"
+    assert data["selected_agent"] == "leave_agent"
+    assert data["status"] == "success"
+
+
+def test_get_agent_runs_for_hr_request(monkeypatch):
+    class MockWorkflow:
+        def __init__(self, db):
+            self.db = db
+
+        def run(self, user_id: str, message: str):
+            from app.services.hr_request_service import HRRequestService
+            from uuid import uuid4
+
+            request_id = str(uuid4())
+            service = HRRequestService(self.db)
+
+            service.create_request(
+                request_id=request_id,
+                user_id=user_id,
+                message=message,
+                source_type="api",
+            )
+
+            service.update_request_result(
+                request_id=request_id,
+                intent="compliance",
+                confidence=0.9,
+                selected_agent="compliance_agent",
+                response="Mock compliance response.",
+                status="success",
+                error_message=None,
+            )
+
+            service.create_agent_run(
+                request_id=request_id,
+                agent_name="compliance_agent",
+                input_summary=message,
+                output_summary="Mock compliance response.",
+                status="success",
+                error_message=None,
+            )
+
+            return {
+                "request_id": request_id,
+                "intent": "compliance",
+                "confidence": 0.9,
+                "selected_agent": "compliance_agent",
+                "response": "Mock compliance response.",
+                "memory_used": True,
+            }
+
+    monkeypatch.setattr(
+        "app.api.routes_requests.HRWorkflow",
+        MockWorkflow,
+    )
+
+    payload = {
+        "user_id": "test_user_003",
+        "message": "Can my manager ask me to work overtime?",
+    }
+
+    request_response = client.post("/requests", json=payload)
+
+    assert request_response.status_code == 200
+    request_id = request_response.json()["request_id"]
+
+    response = client.get(f"/hr-requests/{request_id}/agent-runs")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert isinstance(data, list)
+    assert len(data) >= 1
+    assert data[0]["request_id"] == request_id
+    assert data[0]["agent_name"] == "compliance_agent"
+    assert data[0]["status"] == "success"
