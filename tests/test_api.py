@@ -25,7 +25,7 @@ def test_root_endpoint_returns_api_info():
     assert response.status_code == 200
     data = response.json()
 
-    assert data["message"] == "HR Agent Engine API"
+    assert data["message"] == "HR Intelligence Platform API"
     assert data["docs"] == "/docs"
 
 

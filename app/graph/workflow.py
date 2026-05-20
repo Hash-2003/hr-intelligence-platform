@@ -13,6 +13,7 @@ from app.services.audit_service import AuditService
 from app.services.intent_classifier import IntentClassifier
 from app.services.memory_service import MemoryService
 from app.services.llm_service import LLMServiceError
+from app.services.hr_request_service import HRRequestService
 
 
 class WorkflowState(TypedDict, total=False):
@@ -40,6 +41,7 @@ class HRWorkflow:
         self.settings = get_settings()
         self.memory_service = MemoryService(db)
         self.audit_service = AuditService(db)
+        self.hr_request_service = HRRequestService(db)
         self.intent_classifier = IntentClassifier()
 
         self.scheduling_agent = SchedulingAgent()
@@ -51,8 +53,17 @@ class HRWorkflow:
 
     def run(self, user_id: str, message: str) -> WorkflowState:
         """Run the workflow for one user request."""
+        request_id = str(uuid4())
+
+        self.hr_request_service.create_request(
+            request_id=request_id,
+            user_id=user_id,
+            message=message,
+            source_type="api",
+        )
+
         initial_state: WorkflowState = {
-            "request_id": str(uuid4()),
+            "request_id": request_id,
             "user_id": user_id,
             "message": message,
             "status": "success",
@@ -254,6 +265,25 @@ class HRWorkflow:
 
     def _write_audit(self, state: WorkflowState) -> WorkflowState:
         """Write one append-only audit log entry."""
+        self.hr_request_service.update_request_result(
+            request_id=state["request_id"],
+            intent=state.get("intent"),
+            confidence=state.get("confidence"),
+            selected_agent=state.get("selected_agent"),
+            response=state.get("response"),
+            status=state.get("status", "success"),
+            error_message=state.get("error_message"),
+        )
+
+        if state.get("selected_agent"):
+            self.hr_request_service.create_agent_run(
+                request_id=state["request_id"],
+                agent_name=state["selected_agent"],
+                input_summary=state["message"][:300],
+                output_summary=state.get("response", "")[:500],
+                status=state.get("status", "success"),
+                error_message=state.get("error_message"),
+            )
         self.audit_service.create_log(
             request_id=state["request_id"],
             user_id=state["user_id"],
