@@ -1,4 +1,4 @@
-# HR Agent Engine
+# HR Intelligence Platform
 
 LLM-powered multi-agent task routing and memory engine for an HR automation platform.
 
@@ -23,6 +23,17 @@ This project was developed as a technical challenge for an AI Engineer Intern ap
 - SQLite database
 - Environment-based configuration using `.env`
 - Automated API tests
+
+## Planned improvements:
+
+- HR policy document ingestion
+- Document-grounded RAG for compliance and leave questions
+- Email/webhook-triggered HR request intake
+- Improved database schema for HR cases and agent runs
+- Draft email response generation
+- Human review workflow
+- Docker support
+- PostgreSQL and migration support
 
 ## Tech Stack
 

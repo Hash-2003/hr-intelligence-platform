@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
-    app_name: str = "HR Agent Engine"
+    app_name: str = "HR Intelligence Platform"
     app_env: str = "development"
     database_url: str = "sqlite:///./hr_agent_engine.db"
 

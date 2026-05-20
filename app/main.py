@@ -23,7 +23,7 @@ settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
     version="0.2.0",
-    description="LLM-powered multi-agent task routing and memory engine for HR automation.",
+    description="LLM-powered HR intelligence platform for request routing, memory, audit logging, and document-aware automation.",
     lifespan=lifespan,
 )
 
@@ -37,7 +37,7 @@ app.include_router(requests_router)
 def root() -> dict:
     """Return basic API information."""
     return {
-        "message": "HR Agent Engine API",
+        "message": "HR Intelligence Platform API",
         "docs": "/docs",
         "health": "/health",
         "requests": "/requests",

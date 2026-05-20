@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 hr_agent_engine.db
+hr_intelligence_platform.db
 *.sqlite3
 .idea/
 .vscode/

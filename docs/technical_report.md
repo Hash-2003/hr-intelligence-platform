@@ -1,4 +1,4 @@
-# Technical Report: HR Agent Engine
+# Technical Report: HR Intelligence Platform
 
 ## 1. Project Overview
 
