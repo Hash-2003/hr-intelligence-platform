@@ -1,0 +1,277 @@
+from typing import TypedDict
+from uuid import uuid4
+
+from langgraph.graph import END, StateGraph
+from sqlalchemy.orm import Session
+
+from app.agents.clarification_agent import ClarificationAgent
+from app.agents.compliance_agent import ComplianceAgent
+from app.agents.leave_agent import LeaveAgent
+from app.agents.scheduling_agent import SchedulingAgent
+from app.config import get_settings
+from app.services.audit_service import AuditService
+from app.services.intent_classifier import IntentClassifier
+from app.services.memory_service import MemoryService
+from app.services.llm_service import LLMServiceError
+
+
+class WorkflowState(TypedDict, total=False):
+    """State shared across LangGraph workflow nodes."""
+
+    request_id: str
+    user_id: str
+    message: str
+    memory_context: str
+    memory_used: bool
+    intent: str
+    confidence: float
+    reasoning_summary: str
+    selected_agent: str
+    response: str
+    status: str
+    error_message: str | None
+
+
+class HRWorkflow:
+    """LangGraph workflow for HR request orchestration."""
+
+    def __init__(self, db: Session):
+        self.db = db
+        self.settings = get_settings()
+        self.memory_service = MemoryService(db)
+        self.audit_service = AuditService(db)
+        self.intent_classifier = IntentClassifier()
+
+        self.scheduling_agent = SchedulingAgent()
+        self.leave_agent = LeaveAgent()
+        self.compliance_agent = ComplianceAgent()
+        self.clarification_agent = ClarificationAgent()
+
+        self.graph = self._build_graph()
+
+    def run(self, user_id: str, message: str) -> WorkflowState:
+        """Run the workflow for one user request."""
+        initial_state: WorkflowState = {
+            "request_id": str(uuid4()),
+            "user_id": user_id,
+            "message": message,
+            "status": "success",
+            "error_message": None,
+        }
+
+        return self.graph.invoke(initial_state)
+
+    def _build_graph(self):
+        """Build and compile the LangGraph state graph."""
+        graph = StateGraph(WorkflowState)
+
+        graph.add_node("load_memory", self._load_memory)
+        graph.add_node("classify_intent", self._classify_intent)
+        graph.add_node("scheduling_agent", self._run_scheduling_agent)
+        graph.add_node("leave_agent", self._run_leave_agent)
+        graph.add_node("compliance_agent", self._run_compliance_agent)
+        graph.add_node("clarification_agent", self._run_clarification_agent)
+        graph.add_node("save_memory", self._save_memory)
+        graph.add_node("write_audit", self._write_audit)
+
+        graph.set_entry_point("load_memory")
+
+        graph.add_edge("load_memory", "classify_intent")
+
+        graph.add_conditional_edges(
+            "classify_intent",
+            self._route_by_intent,
+            {
+                "scheduling": "scheduling_agent",
+                "leave": "leave_agent",
+                "compliance": "compliance_agent",
+                "clarification": "clarification_agent",
+            },
+        )
+
+        graph.add_edge("scheduling_agent", "save_memory")
+        graph.add_edge("leave_agent", "save_memory")
+        graph.add_edge("compliance_agent", "save_memory")
+        graph.add_edge("clarification_agent", "save_memory")
+
+        graph.add_edge("save_memory", "write_audit")
+        graph.add_edge("write_audit", END)
+
+        return graph.compile()
+
+    def _load_memory(self, state: WorkflowState) -> WorkflowState:
+        """Load STM and LTM context for the request."""
+        memory_context, memory_used = self.memory_service.build_memory_context(
+            user_id=state["user_id"]
+        )
+
+        return {
+            **state,
+            "memory_context": memory_context,
+            "memory_used": memory_used,
+        }
+
+    def _classify_intent(self, state: WorkflowState) -> WorkflowState:
+        """Classify the request intent using the LLM classifier."""
+        result = self.intent_classifier.classify(
+            message=state["message"],
+            memory_context=state["memory_context"],
+        )
+
+        return {
+            **state,
+            "intent": result.intent,
+            "confidence": result.confidence,
+            "reasoning_summary": result.reasoning_summary,
+        }
+
+    def _route_by_intent(self, state: WorkflowState) -> str:
+        """Return the next graph branch based on classified intent."""
+        intent = state.get("intent", "clarification")
+
+        if intent in {"scheduling", "leave", "compliance"}:
+            return intent
+
+        return "clarification"
+
+    def _run_scheduling_agent(self, state: WorkflowState) -> WorkflowState:
+        """Run the scheduling specialist agent."""
+        try:
+            response = self.scheduling_agent.run(
+                user_message=state["message"],
+                memory_context=state["memory_context"],
+            )
+
+            return {
+                **state,
+                "selected_agent": self.scheduling_agent.name,
+                "response": response,
+            }
+
+        except LLMServiceError as exc:
+            return {
+                **state,
+                "selected_agent": self.scheduling_agent.name,
+                "response": self._safe_failure_response(),
+                "status": "failed",
+                "error_message": str(exc),
+            }
+
+    def _run_leave_agent(self, state: WorkflowState) -> WorkflowState:
+        """Run the leave specialist agent."""
+        try:
+            response = self.leave_agent.run(
+                user_message=state["message"],
+                memory_context=state["memory_context"],
+            )
+
+            return {
+                **state,
+                "selected_agent": self.leave_agent.name,
+                "response": response,
+            }
+
+        except LLMServiceError as exc:
+            return {
+                **state,
+                "selected_agent": self.leave_agent.name,
+                "response": self._safe_failure_response(),
+                "status": "failed",
+                "error_message": str(exc),
+            }
+
+    def _run_compliance_agent(self, state: WorkflowState) -> WorkflowState:
+        """Run the compliance specialist agent."""
+        try:
+            response = self.compliance_agent.run(
+                user_message=state["message"],
+                memory_context=state["memory_context"],
+            )
+
+            return {
+                **state,
+                "selected_agent": self.compliance_agent.name,
+                "response": response,
+            }
+
+        except LLMServiceError as exc:
+            return {
+                **state,
+                "selected_agent": self.compliance_agent.name,
+                "response": self._safe_failure_response(),
+                "status": "failed",
+                "error_message": str(exc),
+            }
+
+    def _run_clarification_agent(self, state: WorkflowState) -> WorkflowState:
+        """Run the clarification specialist agent."""
+        try:
+            response = self.clarification_agent.run(
+                user_message=state["message"],
+                memory_context=state["memory_context"],
+            )
+
+            return {
+                **state,
+                "selected_agent": self.clarification_agent.name,
+                "response": response,
+            }
+
+        except LLMServiceError as exc:
+            return {
+                **state,
+                "selected_agent": self.clarification_agent.name,
+                "response": self._safe_failure_response(),
+                "status": "failed",
+                "error_message": str(exc),
+            }
+
+    def _save_memory(self, state: WorkflowState) -> WorkflowState:
+        """Save recent request context and promote significant items to LTM."""
+        user_id = state["user_id"]
+        message = state["message"]
+        intent = state.get("intent")
+
+        self.memory_service.add_short_term_memory(
+            user_id=user_id,
+            content=f"User said: {message}",
+            intent=intent,
+        )
+
+        significance = self.memory_service.score_significance(
+            message=message,
+            intent=intent,
+        )
+
+        if significance >= self.settings.ltm_significance_threshold:
+            self.memory_service.add_long_term_memory(
+                user_id=user_id,
+                content=f"Important user context: {message}",
+                significance_score=significance,
+            )
+
+        return state
+
+    def _write_audit(self, state: WorkflowState) -> WorkflowState:
+        """Write one append-only audit log entry."""
+        self.audit_service.create_log(
+            request_id=state["request_id"],
+            user_id=state["user_id"],
+            message=state["message"],
+            classified_intent=state.get("intent"),
+            confidence=state.get("confidence"),
+            selected_agent=state.get("selected_agent"),
+            response_summary=state.get("response", "")[:300],
+            status=state.get("status", "success"),
+            error_message=state.get("error_message"),
+        )
+
+        return state
+
+    @staticmethod
+    def _safe_failure_response() -> str:
+        """Return a polite failure response without exposing internal errors."""
+        return (
+            "I’m sorry, I could not complete the request right now. "
+            "Please try again shortly or contact HR if the matter is urgent."
+        )

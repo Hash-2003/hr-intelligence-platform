@@ -1,0 +1,289 @@
+{
+  "info": {
+    "_postman_id": "1a2600e5-083e-49fe-b6ca-99b1f8c8c57a",
+    "name": "HR Agent Engine API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "41949699",
+    "_collection_link": "https://go.postman.co/collection/41949699-1a2600e5-083e-49fe-b6ca-99b1f8c8c57a?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/health",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "health"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "/",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            ""
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "requests_LeaveIntent",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n  \"user_id\": \"user_001\",\r\n  \"message\": \"I want to apply for annual leave next Monday.\"\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/requests",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "requests"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "requests_SchedulingIntent",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n  \"user_id\": \"user_001\",\r\n  \"message\": \"Schedule an interview with Kasun tomorrow morning.\"\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/requests",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "requests"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "requests_ComplienceIntent",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n  \"user_id\": \"user_001\",\r\n  \"message\": \"Can my manager ask me to work overtime without approval?\"\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/requests",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "requests"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "requests_ClarificationIntent",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n  \"user_id\": \"user_001\",\r\n  \"message\": \"Can you help me with that thing?\"\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/requests",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "requests"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "LongTermMemory",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n  \"user_id\": \"user_001\",\r\n  \"content\": \"User prefers morning interviews.\",\r\n  \"memory_type\": \"ltm\",\r\n  \"significance\": 0.9\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/memory",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "memory"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "ShortTermMemory",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n  \"user_id\": \"user_001\",\r\n  \"content\": \"User asked about annual leave.\",\r\n  \"memory_type\": \"stm\"\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/memory",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "memory"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "memory",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/memory/user_001",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "memory",
+            "user_001"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "audit",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/audit",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "audit"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "audit_user",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/audit?user_id=user_001",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "audit"
+          ],
+          "query": [
+            {
+              "key": "user_id",
+              "value": "user_001"
+            }
+          ]
+        }
+      },
+      "response": []
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "requests": {},
+        "exec": [
+          ""
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "requests": {},
+        "exec": [
+          ""
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": ""
+    }
+  ]
+}

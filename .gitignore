@@ -1,0 +1,9 @@
+.venv/
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+hr_agent_engine.db
+*.sqlite3
+.idea/
+.vscode/
