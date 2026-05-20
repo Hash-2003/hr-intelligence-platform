@@ -3,6 +3,8 @@ from fastapi.testclient import TestClient
 from app.database import create_db_tables
 from app.main import app
 
+from pathlib import Path
+
 
 create_db_tables()
 client = TestClient(app)
@@ -277,3 +279,76 @@ def test_get_agent_runs_for_hr_request(monkeypatch):
     assert data[0]["request_id"] == request_id
     assert data[0]["agent_name"] == "compliance_agent"
     assert data[0]["status"] == "success"
+
+def test_document_service_chunk_text():
+    from app.services.document_service import DocumentService
+
+    text = "A" * 2500
+    chunks = DocumentService.chunk_text(text, max_chars=1000, overlap=100)
+
+    assert len(chunks) == 3
+    assert all(len(chunk) <= 1000 for chunk in chunks)
+
+
+def test_document_service_hash_text_is_stable():
+    from app.services.document_service import DocumentService
+
+    text = "Employees receive 14 days of annual leave."
+    hash_one = DocumentService.hash_text(text)
+    hash_two = DocumentService.hash_text(text)
+
+    assert hash_one == hash_two
+    assert len(hash_one) == 64
+
+
+def test_get_documents_endpoint():
+    response = client.get("/documents")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert isinstance(data, list)
+
+
+def test_ingest_local_document_and_retrieve_chunks():
+    from app.database import SessionLocal, create_db_tables
+    from app.services.document_service import DocumentService
+
+    create_db_tables()
+
+    db = SessionLocal()
+
+    try:
+        service = DocumentService(db)
+        file_path = Path("data/hr_documents/leave_policy.md")
+
+        document, chunks_created, changed = service.ingest_local_document(file_path)
+
+        assert document.id is not None
+        assert document.filename == "leave_policy.md"
+        assert document.content_hash is not None
+        assert chunks_created >= 0
+
+        chunks = service.get_document_chunks(document.id)
+
+        assert len(chunks) >= 1
+        assert "Annual Leave" in chunks[0].content or "annual leave" in chunks[0].content
+
+        response = client.get(f"/documents/{document.id}/chunks")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert isinstance(data, list)
+        assert len(data) >= 1
+        assert data[0]["document_id"] == document.id
+
+    finally:
+        db.close()
+
+
+def test_get_missing_document_returns_404():
+    response = client.get("/documents/999999")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Document not found."
