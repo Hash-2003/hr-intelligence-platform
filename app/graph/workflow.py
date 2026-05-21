@@ -14,6 +14,7 @@ from app.services.intent_classifier import IntentClassifier
 from app.services.memory_service import MemoryService
 from app.services.llm_service import LLMServiceError
 from app.services.hr_request_service import HRRequestService
+from app.services.document_retrieval_service import DocumentRetrievalService
 
 
 class WorkflowState(TypedDict, total=False):
@@ -24,6 +25,8 @@ class WorkflowState(TypedDict, total=False):
     message: str
     memory_context: str
     memory_used: bool
+    policy_context: str
+    policy_sources_used: list[dict]
     intent: str
     confidence: float
     reasoning_summary: str
@@ -42,6 +45,7 @@ class HRWorkflow:
         self.memory_service = MemoryService(db)
         self.audit_service = AuditService(db)
         self.hr_request_service = HRRequestService(db)
+        self.document_retrieval_service = DocumentRetrievalService(db)
         self.intent_classifier = IntentClassifier()
 
         self.scheduling_agent = SchedulingAgent()
@@ -82,6 +86,7 @@ class HRWorkflow:
         graph.add_node("leave_agent", self._run_leave_agent)
         graph.add_node("compliance_agent", self._run_compliance_agent)
         graph.add_node("clarification_agent", self._run_clarification_agent)
+        graph.add_node("retrieve_policy_context", self._retrieve_policy_context)
         graph.add_node("save_memory", self._save_memory)
         graph.add_node("write_audit", self._write_audit)
 
@@ -89,8 +94,10 @@ class HRWorkflow:
 
         graph.add_edge("load_memory", "classify_intent")
 
+        graph.add_edge("classify_intent", "retrieve_policy_context")
+
         graph.add_conditional_edges(
-            "classify_intent",
+            "retrieve_policy_context",
             self._route_by_intent,
             {
                 "scheduling": "scheduling_agent",
@@ -136,7 +143,34 @@ class HRWorkflow:
             "reasoning_summary": result.reasoning_summary,
         }
 
-    def _route_by_intent(self, state: WorkflowState) -> str:
+    def _retrieve_policy_context(self, state: WorkflowState) -> WorkflowState:
+        """Retrieve relevant HR policy context for agent prompt injection."""
+        policy_context, sources = self.document_retrieval_service.retrieve_policy_context(
+            query=state["message"],
+            intent=state.get("intent"),
+            limit=3,
+        )
+
+        policy_sources_used = [
+            {
+                "document_id": source.document_id,
+                "document_title": source.document_title,
+                "filename": source.filename,
+                "chunk_id": source.chunk_id,
+                "chunk_index": source.chunk_index,
+                "score": source.score,
+            }
+            for source in sources
+        ]
+
+        return {
+            **state,
+            "policy_context": policy_context,
+            "policy_sources_used": policy_sources_used,
+        }
+
+    @staticmethod
+    def _route_by_intent(state: WorkflowState) -> str:
         """Return the next graph branch based on classified intent."""
         intent = state.get("intent", "clarification")
 
@@ -145,97 +179,52 @@ class HRWorkflow:
 
         return "clarification"
 
-    def _run_scheduling_agent(self, state: WorkflowState) -> WorkflowState:
-        """Run the scheduling specialist agent."""
+    def _run_agent_safely(
+            self,
+            state: WorkflowState,
+            agent,
+    ) -> WorkflowState:
+        """Run a specialist agent and safely handle LLM failures."""
         try:
-            response = self.scheduling_agent.run(
+            response = agent.run(
                 user_message=state["message"],
                 memory_context=state["memory_context"],
+                policy_context=state.get(
+                    "policy_context",
+                    "No relevant HR policy context found.",
+                ),
             )
 
             return {
                 **state,
-                "selected_agent": self.scheduling_agent.name,
+                "selected_agent": agent.name,
                 "response": response,
             }
 
         except LLMServiceError as exc:
             return {
                 **state,
-                "selected_agent": self.scheduling_agent.name,
+                "selected_agent": agent.name,
                 "response": self._safe_failure_response(),
                 "status": "failed",
                 "error_message": str(exc),
             }
+
+    def _run_scheduling_agent(self, state: WorkflowState) -> WorkflowState:
+        """Run the scheduling specialist agent."""
+        return self._run_agent_safely(state, self.scheduling_agent)
 
     def _run_leave_agent(self, state: WorkflowState) -> WorkflowState:
         """Run the leave specialist agent."""
-        try:
-            response = self.leave_agent.run(
-                user_message=state["message"],
-                memory_context=state["memory_context"],
-            )
-
-            return {
-                **state,
-                "selected_agent": self.leave_agent.name,
-                "response": response,
-            }
-
-        except LLMServiceError as exc:
-            return {
-                **state,
-                "selected_agent": self.leave_agent.name,
-                "response": self._safe_failure_response(),
-                "status": "failed",
-                "error_message": str(exc),
-            }
+        return self._run_agent_safely(state, self.leave_agent)
 
     def _run_compliance_agent(self, state: WorkflowState) -> WorkflowState:
         """Run the compliance specialist agent."""
-        try:
-            response = self.compliance_agent.run(
-                user_message=state["message"],
-                memory_context=state["memory_context"],
-            )
-
-            return {
-                **state,
-                "selected_agent": self.compliance_agent.name,
-                "response": response,
-            }
-
-        except LLMServiceError as exc:
-            return {
-                **state,
-                "selected_agent": self.compliance_agent.name,
-                "response": self._safe_failure_response(),
-                "status": "failed",
-                "error_message": str(exc),
-            }
+        return self._run_agent_safely(state, self.compliance_agent)
 
     def _run_clarification_agent(self, state: WorkflowState) -> WorkflowState:
         """Run the clarification specialist agent."""
-        try:
-            response = self.clarification_agent.run(
-                user_message=state["message"],
-                memory_context=state["memory_context"],
-            )
-
-            return {
-                **state,
-                "selected_agent": self.clarification_agent.name,
-                "response": response,
-            }
-
-        except LLMServiceError as exc:
-            return {
-                **state,
-                "selected_agent": self.clarification_agent.name,
-                "response": self._safe_failure_response(),
-                "status": "failed",
-                "error_message": str(exc),
-            }
+        return self._run_agent_safely(state, self.clarification_agent)
 
     def _save_memory(self, state: WorkflowState) -> WorkflowState:
         """Save recent request context and promote significant items to LTM."""

@@ -9,22 +9,30 @@ class SchedulingAgent:
     def __init__(self) -> None:
         self.llm_service = LLMService()
 
-    def run(self, user_message: str, memory_context: str) -> str:
+    def run(
+            self,
+            user_message: str,
+            memory_context: str,
+            policy_context: str = "No relevant HR policy context required.",
+    ) -> str:
         """Generate a scheduling-focused response."""
         system_prompt = """
-You are the Scheduling Agent in an HR automation platform.
+        You are the Scheduling Agent in an HR automation platform.
 
-Your responsibilities:
-- Help with meetings, interviews, calendar coordination, and rescheduling.
-- Use the provided memory context when relevant.
-- Ask for missing details such as date, time, attendee names, or meeting purpose.
-- Do not claim that a real calendar event has been created.
-- Keep the response polite, concise, and operational.
-""".strip()
+        Your responsibilities:
+        - Help with meetings, interviews, calendar coordination, and rescheduling.
+        - Use the provided memory context when relevant.
+        - Ask for missing details such as date, time, attendee names, or meeting purpose.
+        - Do not claim that a real calendar event has been created.
+        - Keep the response polite, concise, and operational.
+        """.strip()
 
         user_prompt = f"""
 Memory context:
 {memory_context}
+
+HR policy context:
+{policy_context}
 
 User request:
 {user_message}

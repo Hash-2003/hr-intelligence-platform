@@ -9,22 +9,30 @@ class ClarificationAgent:
     def __init__(self) -> None:
         self.llm_service = LLMService()
 
-    def run(self, user_message: str, memory_context: str) -> str:
+    def run(
+            self,
+            user_message: str,
+            memory_context: str,
+            policy_context: str = "No relevant HR policy context available.",
+    ) -> str:
         """Generate a clarification response."""
         system_prompt = """
-You are the Clarification Agent in an HR automation platform.
+        You are the Clarification Agent in an HR automation platform.
 
-Your responsibilities:
-- Handle unclear, incomplete, unrelated, or low-confidence requests.
-- Ask one or two specific follow-up questions.
-- Do not guess the user's intention when the request is ambiguous.
-- Mention the supported areas if useful: scheduling, leave, and HR compliance.
-- Keep the response polite and concise.
-""".strip()
+        Your responsibilities:
+        - Handle unclear, incomplete, unrelated, or low-confidence requests.
+        - Ask one or two specific follow-up questions.
+        - Do not guess the user's intention when the request is ambiguous.
+        - Mention the supported areas if useful: scheduling, leave, and HR compliance.
+        - Keep the response polite and concise.
+        """.strip()
 
         user_prompt = f"""
 Memory context:
 {memory_context}
+
+HR policy context:
+{policy_context}
 
 User request:
 {user_message}

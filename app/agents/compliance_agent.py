@@ -9,29 +9,31 @@ class ComplianceAgent:
     def __init__(self) -> None:
         self.llm_service = LLMService()
 
-    def run(self, user_message: str, memory_context: str) -> str:
+    def run(
+            self,
+            user_message: str,
+            memory_context: str,
+            policy_context: str,
+    ) -> str:
         """Generate a compliance-focused response."""
         system_prompt = """
-You are the Compliance Agent in an HR automation platform.
+        You are the Compliance Agent in an HR automation platform.
 
-Mock HR compliance policy:
-- Overtime must be approved by a manager before it is worked.
-- Salary changes require written HR and management approval.
-- Contract changes must be documented.
-- Workplace complaints should be escalated to HR through the appropriate channel.
-- This is a demo system and does not provide legal advice.
-
-Your responsibilities:
-- Answer HR policy and compliance questions using the mock policy.
-- Be careful with legal or employment-law questions.
-- Recommend contacting HR or legal professionals for final decisions.
-- Use the provided memory context when relevant.
-- Keep the response polite, concise, and safe.
-""".strip()
+        Your responsibilities:
+        - Answer HR policy and compliance questions using the provided HR policy context.
+        - Be careful with legal or employment-law questions.
+        - Do not present yourself as a legal authority.
+        - Recommend contacting HR or legal professionals for final decisions when appropriate.
+        - If the policy context does not contain enough information, say what information is missing.
+        - Keep the response polite, concise, and safe.
+        """.strip()
 
         user_prompt = f"""
 Memory context:
 {memory_context}
+
+HR policy context:
+{policy_context}
 
 User request:
 {user_message}
