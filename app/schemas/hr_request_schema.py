@@ -42,3 +42,20 @@ class AgentRunResponse(BaseModel):
     model_config = {
         "from_attributes": True
     }
+
+class RequestPolicySourceResponse(BaseModel):
+    """Policy source record used by an HR request."""
+
+    id: int
+    request_id: str
+    document_id: int
+    document_title: str
+    filename: str
+    chunk_id: int
+    chunk_index: int
+    score: int
+    created_at: datetime
+
+    model_config = {
+        "from_attributes": True
+    }

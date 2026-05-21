@@ -107,6 +107,40 @@ class DocumentChunk(Base):
         nullable=False,
     )
 
+class RequestPolicySource(Base):
+    """Policy document chunk used as context for an HR request."""
+
+    __tablename__ = "request_policy_sources"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    request_id: Mapped[str] = mapped_column(
+        String(100),
+        ForeignKey("hr_requests.request_id"),
+        index=True,
+        nullable=False,
+    )
+    document_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("documents.id"),
+        index=True,
+        nullable=False,
+    )
+    document_title: Mapped[str] = mapped_column(String(255), nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    chunk_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("document_chunks.id"),
+        index=True,
+        nullable=False,
+    )
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    score: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
 class ShortTermMemory(Base):
     """Short-term memory records for recent conversation context."""
 

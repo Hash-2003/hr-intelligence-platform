@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.schemas.hr_request_schema import AgentRunResponse, HRRequestResponse
+from app.schemas.hr_request_schema import AgentRunResponse, HRRequestResponse, RequestPolicySourceResponse
 from app.services.hr_request_service import HRRequestService
 
 router = APIRouter(prefix="/hr-requests", tags=["HR Requests"])
@@ -56,4 +56,23 @@ def get_hr_request_agent_runs(
     return [
         AgentRunResponse.model_validate(run)
         for run in runs
+    ]
+
+@router.get("/{request_id}/policy-sources", response_model=list[RequestPolicySourceResponse])
+def get_hr_request_policy_sources(
+    request_id: str,
+    db: Session = Depends(get_db),
+) -> list[RequestPolicySourceResponse]:
+    """Retrieve policy document chunks used by one HR request."""
+    service = HRRequestService(db)
+
+    request = service.get_request_by_id(request_id)
+    if request is None:
+        raise HTTPException(status_code=404, detail="HR request not found.")
+
+    sources = service.get_policy_sources(request_id)
+
+    return [
+        RequestPolicySourceResponse.model_validate(source)
+        for source in sources
     ]

@@ -273,6 +273,14 @@ class HRWorkflow:
                 status=state.get("status", "success"),
                 error_message=state.get("error_message"),
             )
+
+        policy_sources_used = state.get("policy_sources_used", [])
+        if policy_sources_used:
+            self.hr_request_service.create_policy_sources(
+                request_id=state["request_id"],
+                policy_sources=policy_sources_used,
+            )
+
         self.audit_service.create_log(
             request_id=state["request_id"],
             user_id=state["user_id"],

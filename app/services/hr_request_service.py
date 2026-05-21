@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
-from app.database import AgentRun, HRRequest
+from app.database import AgentRun, HRRequest, RequestPolicySource
 
 
 class HRRequestService:
@@ -118,5 +118,43 @@ class HRRequestService:
             self.db.query(AgentRun)
             .filter(AgentRun.request_id == request_id)
             .order_by(desc(AgentRun.started_at))
+            .all()
+        )
+
+    def create_policy_sources(
+            self,
+            request_id: str,
+            policy_sources: list[dict],
+    ) -> list[RequestPolicySource]:
+        """Persist policy document chunks used by a request."""
+        records: list[RequestPolicySource] = []
+
+        for source in policy_sources:
+            record = RequestPolicySource(
+                request_id=request_id,
+                document_id=source["document_id"],
+                document_title=source["document_title"],
+                filename=source["filename"],
+                chunk_id=source["chunk_id"],
+                chunk_index=source["chunk_index"],
+                score=source["score"],
+            )
+
+            self.db.add(record)
+            records.append(record)
+
+        self.db.commit()
+
+        for record in records:
+            self.db.refresh(record)
+
+        return records
+
+    def get_policy_sources(self, request_id: str) -> list[RequestPolicySource]:
+        """Retrieve policy sources used by one HR request."""
+        return (
+            self.db.query(RequestPolicySource)
+            .filter(RequestPolicySource.request_id == request_id)
+            .order_by(RequestPolicySource.score.desc())
             .all()
         )
