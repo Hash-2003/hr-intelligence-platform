@@ -4,11 +4,12 @@
 
 HR Intelligence Platform is an AI-powered backend platform for HR request intake, document-grounded reasoning, memory-aware agent orchestration, and auditable draft response generation.
 
-The system will evolve from a technical challenge MVP into a more complete AI engineering platform demonstrating:
+The system is evolving from a technical challenge MVP into a more complete AI engineering platform demonstrating:
 
 - LLM-powered intent classification
 - LangGraph-based multi-agent orchestration
-- HR document retrieval and extraction
+- Controlled HR document ingestion
+- Traceable document-grounded retrieval
 - Email/webhook-triggered request intake
 - Structured database design
 - Auditability and human-in-the-loop review
@@ -23,6 +24,7 @@ The current system already includes:
 - FastAPI backend
 - LangGraph orchestration
 - LLM-based intent classification
+- Intent correction guardrails for obvious HR routing cases
 - Scheduling, Leave, Compliance, and Clarification agents
 - Short-term and long-term memory
 - Append-only audit logs
@@ -34,6 +36,12 @@ The current system already includes:
 - HR request/case persistence
 - Agent run persistence
 - Request retrieval endpoints
+- Controlled HR document ingestion from local policy files
+- Document chunk storage
+- Keyword-based HR policy retrieval
+- Policy context injection into Leave and Compliance agents
+- Persisted policy sources used by HR requests
+- Policy source retrieval endpoint
 
 ---
 
@@ -41,7 +49,7 @@ The current system already includes:
 
 ### Phase 1: Foundation Refactor
 
-Goal: prepare the system for platform-grade extensions.
+Goal: prepare the system for larger platform extensions.
 
 Completed:
 
@@ -61,69 +69,111 @@ Remaining:
 
 ---
 
-### 2. Document-Aware HR Reasoning
+### Phase 2: Document Ingestion
 
-Add HR policy document ingestion and retrieval.
+Goal: allow the system to ingest controlled HR policy documents and store reusable text chunks.
 
-Planned features:
+Completed:
 
-- Upload or register HR policy documents
-- Extract text from documents
-- Split text into chunks
-- Store document chunks
-- Retrieve relevant chunks during agent execution
-- Inject retrieved policy context into LLM prompts
-- Include source references in agent responses
+- Added controlled local HR document directory: `data/hr_documents/`
+- Added sample HR policy documents:
+  - Leave policy
+  - Overtime policy
+  - Code of conduct
+- Added `documents` table
+- Added `document_chunks` table
+- Added local document ingestion script
+- Added SHA-256 content hashing for change detection
+- Added text chunking logic
+- Added document retrieval endpoints
+- Added tests for document ingestion and retrieval
 
-Initial documents:
+Remaining:
 
-- Leave policy
-- Overtime policy
-- Employee handbook
-- Code of conduct
-- Remote work policy
-- Expense reimbursement policy
+- Add support for PDF or DOCX documents
+- Add document versioning
+- Add document category/filter metadata
+- Add admin-only document upload later if needed
 
 ---
 
-### 3. Email/Webhook Intake
+### Phase 3: Document-Grounded Agent Responses
 
-Add an intake mechanism for HR-related emails or external automation tools.
+Goal: use HR policy context inside agent prompts and make retrieved sources traceable.
+
+Completed:
+
+- Added keyword-based policy chunk retrieval
+- Added lightweight token normalization for keyword matching
+- Injected retrieved policy context into agent prompts
+- Improved Leave and Compliance Agent prompts for policy-grounded answers
+- Added intent correction guardrails for obvious HR routing errors
+- Persisted policy source metadata for each HR request
+- Added endpoint to retrieve policy sources used by a request:
+
+```http
+GET /hr-requests/{request_id}/policy-sources
+```
+
+- Added tests for policy source retrieval
+
+Remaining:
+
+- Improve retrieval ranking
+- Add source-aware response formatting
+- Add embedding-based semantic retrieval
+- Add retrieval quality evaluation tests
+- Persist full retrieved context snapshots if needed for deeper auditability
+
+---
+
+### Phase 4: Email/Webhook Intake
+
+Goal: support external request triggers from email parsers, automation tools, or webhook-based integrations.
 
 Planned features:
 
-- Webhook endpoint for incoming email-like events
-- Store email sender, subject, body, and timestamp
+- Add `/webhooks/email` endpoint
+- Store incoming email sender, subject, body, and timestamp
+- Convert email events into HR requests
 - Classify email intent
-- Create an HR request automatically
+- Run the existing LangGraph workflow
 - Generate a draft response
-- Keep response as draft for human review
+- Keep the response as draft for human review
 
 Initial implementation should use a generic webhook before integrating Gmail or n8n.
 
+Expected outcome:
+
+- External tools such as n8n, Zapier, or email parsers can trigger HR request processing through the backend.
+
 ---
 
-### 4. Draft Response Workflow
+### Phase 5: Draft Response Workflow
 
-Add human-in-the-loop draft response management.
+Goal: make generated responses reviewable before any sensitive HR communication is sent.
 
 Planned features:
 
-- Generate draft HR responses
-- Store draft response linked to HR request
-- Review draft before sending
-- Update draft manually
-- Mark draft as approved or rejected
+- Add `draft_responses` table
+- Generate draft HR responses linked to HR requests
+- Add endpoints to list, retrieve, update, approve, and reject drafts
+- Add request status transitions such as `draft_generated`, `needs_review`, `approved`, `rejected`, and `closed`
+- Keep audit logs for review actions
 
 The system should not automatically send emails in the first version.
 
+Expected outcome:
+
+- The system supports human-in-the-loop review rather than automatically sending sensitive HR responses.
+
 ---
 
-### 5. Improved Database Schema
+### Phase 6: Improved Platform Schema
 
-Move from simple assessment tables to a more complete platform schema.
+Goal: move from a simple local assessment schema toward a more complete platform schema.
 
-Planned tables:
+Current and planned tables:
 
 ```text
 users
@@ -134,6 +184,7 @@ short_term_memory
 long_term_memory
 documents
 document_chunks
+request_policy_sources
 email_events
 draft_responses
 ```
@@ -148,149 +199,71 @@ Suggested purpose of each table:
 | `audit_logs` | Stores append-only trace records for observability and review. |
 | `short_term_memory` | Stores recent request context. |
 | `long_term_memory` | Stores durable user preferences and important context. |
-| `documents` | Stores uploaded or registered HR documents. |
+| `documents` | Stores controlled HR documents. |
 | `document_chunks` | Stores extracted and chunked text from documents. |
+| `request_policy_sources` | Stores policy chunks used by each HR request. |
 | `email_events` | Stores incoming email or webhook events. |
 | `draft_responses` | Stores generated responses awaiting review. |
 
 ---
 
-### 6. RAG and Semantic Search
+### Phase 7: RAG and Semantic Search Improvements
 
-Future document retrieval can be improved using embeddings.
+Goal: improve retrieval quality beyond keyword matching.
 
 Possible options:
 
 - ChromaDB for local vector storage
 - PostgreSQL with pgvector
 - FAISS for local retrieval
+- Hybrid retrieval combining keywords and embeddings
 
-Initial implementation can use keyword-based retrieval before adding embeddings. This allows the document workflow to be built and tested before introducing vector database complexity.
+Planned improvements:
+
+- Generate embeddings for document chunks
+- Retrieve chunks by semantic similarity
+- Combine semantic scores with keyword scores
+- Add source-aware response citations
+- Add retrieval evaluation test cases
+
+Current implementation uses keyword-based retrieval because it is transparent, easy to debug, and suitable for the initial controlled policy document set.
 
 ---
 
-### 7. Production Readiness Improvements
+### Phase 8: Safety-Sensitive Request Handling
+
+Goal: avoid treating crisis, self-harm, or emergency messages as normal HR requests.
+
+Planned features:
+
+- Add a dedicated Safety Agent for crisis-sensitive or non-HR emergency messages
+- Detect safety-sensitive messages before normal HR routing
+- Return supportive, non-diagnostic, non-graphic responses
+- Recommend immediate real-world support or emergency help when appropriate
+- Avoid routing crisis messages to Leave, Scheduling, Compliance, or generic Clarification agents
+- Record only minimal safe audit metadata for sensitive safety cases
+
+This phase should be handled carefully and separately from standard HR policy automation.
+
+---
+
+### Phase 9: Production Readiness Improvements
+
+Goal: improve deployment, maintainability, and operational quality.
 
 Planned improvements:
 
 - Alembic database migrations
-- Docker support
-- Structured logging
-- Better error models
-- Request IDs in logs
-- Environment-specific settings
-- Improved tests
-- CI workflow
+- Dockerfile
+- Docker Compose setup
 - PostgreSQL support
-
----
-
-## Implementation Phases
-
-### Phase 1: Foundation Refactor
-
-Goal: prepare the system for larger platform extensions.
-
-Tasks:
-
-- Add HR request model
-- Add agent run model
-- Keep audit log append-only
-- Add request status tracking
-- Update `/requests` pipeline to persist HR request records
-- Add API endpoints to retrieve requests
-
-Expected outcome:
-
-- Every incoming request becomes a persistent HR case.
-- Every agent execution can be traced through an agent run record.
-- Audit logs remain append-only and independent from operational request records.
-
----
-
-### Phase 2: Document Ingestion
-
-Goal: allow the system to store HR documents and extract text.
-
-Tasks:
-
-- Add document and document chunk tables
-- Add document upload endpoint
-- Add text extraction for `.txt` and `.md`
-- Add simple chunking logic
-- Add document retrieval service
-
-Expected outcome:
-
-- HR policy documents can be registered in the system.
-- Extracted text can be stored and retrieved for later agent use.
-
----
-
-### Phase 3: Document-Grounded Agent Responses
-
-Goal: use HR policy context inside agent prompts.
-
-Tasks:
-
-- Retrieve relevant document chunks based on user message
-- Inject retrieved policy context into Leave and Compliance agents
-- Store which chunks were used
-- Add source-aware response summaries
-
-Expected outcome:
-
-- Leave and Compliance Agent responses become grounded in stored HR documents instead of only mock policy text.
-
----
-
-### Phase 4: Webhook Intake
-
-Goal: support external request triggers.
-
-Tasks:
-
-- Add `/webhooks/email` endpoint
-- Store incoming email event
-- Convert email into HR request
-- Run existing LangGraph workflow
-- Generate draft response
-
-Expected outcome:
-
-- External tools such as n8n or email parsers can trigger HR request processing through the backend.
-
----
-
-### Phase 5: Human Review Workflow
-
-Goal: make generated responses reviewable.
-
-Tasks:
-
-- Add draft response table
-- Add endpoints to list, update, approve, and reject drafts
-- Add request status transitions
-- Keep audit log for review actions
-
-Expected outcome:
-
-- The system supports human-in-the-loop review rather than automatically sending sensitive HR responses.
-
----
-
-### Phase 6: Production Tooling
-
-Goal: improve deployment and maintainability.
-
-Tasks:
-
-- Add Alembic
-- Add Dockerfile
-- Add docker-compose
-- Add PostgreSQL option
-- Add CI test workflow
-- Improve logging and observability
+- Structured logging
+- Request IDs in logs
+- Better error models
+- Environment-specific settings
+- CI workflow for tests
+- Improved test database isolation
+- Basic observability and health diagnostics
 
 Expected outcome:
 
@@ -301,10 +274,12 @@ Expected outcome:
 ## Design Principles
 
 - API-first backend design
+- Controlled HR document knowledge base
 - Human-in-the-loop for HR decisions
 - No automatic sending of sensitive HR responses initially
 - Transparent audit trail
-- Clear separation between orchestration, agents, memory, documents, and persistence
+- Traceable document-grounded responses
+- Clear separation between orchestration, agents, memory, documents, retrieval, and persistence
 - Safe fallback behavior for LLM failures
 - Avoid exposing sensitive credentials or raw internal errors
 - Build incrementally, with working checkpoints after each phase
@@ -313,15 +288,17 @@ Expected outcome:
 
 ## Immediate Next Step
 
-The next implementation step should be **Phase 1: Foundation Refactor**.
+The next implementation step should be **Phase 4: Email/Webhook Intake**.
 
 Recommended first code changes:
 
-1. Add `HRRequest` and `AgentRun` SQLAlchemy models.
+1. Add `EmailEvent` SQLAlchemy model.
 2. Add corresponding Pydantic schemas.
-3. Add `RequestService` and `AgentRunService`.
-4. Update the LangGraph workflow to create and update HR request records.
-5. Add endpoints to list and retrieve HR requests.
-6. Add tests for the new request persistence layer.
+3. Add `EmailEventService`.
+4. Add `/webhooks/email` endpoint for generic email-like payloads.
+5. Convert incoming webhook payloads into persistent HR requests.
+6. Run the existing LangGraph workflow for webhook-created requests.
+7. Store generated response as a draft rather than sending anything automatically.
+8. Add tests for webhook intake and request creation.
 
-This should be completed before document ingestion or webhook intake because both future features depend on a stronger request/case model.
+This should be implemented before Gmail or n8n integration so that the backend remains testable without external OAuth or automation dependencies.
