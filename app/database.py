@@ -39,6 +39,35 @@ class HRRequest(Base):
         nullable=False,
     )
 
+class EmailEvent(Base):
+    """Incoming email-like event received through webhook intake."""
+
+    __tablename__ = "email_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    event_id: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
+    sender_email: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
+    sender_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    received_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    source: Mapped[str] = mapped_column(String(50), nullable=False, default="webhook")
+    linked_request_id: Mapped[str | None] = mapped_column(
+        String(100),
+        ForeignKey("hr_requests.request_id"),
+        index=True,
+        nullable=True,
+    )
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="received")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
 
 class AgentRun(Base):
     """Record of a specialist agent execution for an HR request."""
