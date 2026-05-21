@@ -127,7 +127,7 @@ clarification
 ### 1. Clone the Repository
 
 ```powershell
-git clone <your-repository-url>
+git clone https://github.com/Hash-2003/hr-intelligence-platform
 cd hr-intelligence-platform
 ```
 
