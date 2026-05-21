@@ -75,6 +75,11 @@ User request:
                     "LLM returned an unsupported intent."
                 )
 
+            result = self._correct_obvious_intent(
+                message=message,
+                result=result,
+            )
+
             if result.confidence < self.settings.intent_confidence_threshold:
                 return IntentClassificationResult(
                     intent="clarification",
@@ -91,6 +96,74 @@ User request:
             return self._clarification_result(
                 f"Intent classification failed safely: {exc}"
             )
+
+    @staticmethod
+    def _correct_obvious_intent(
+            message: str,
+            result: IntentClassificationResult,
+    ) -> IntentClassificationResult:
+        """Correct obvious high-signal HR intents after LLM classification."""
+        text = message.lower()
+
+        leave_signals = {
+            "annual leave",
+            "sick leave",
+            "casual leave",
+            "leave days",
+            "leave balance",
+            "time off",
+            "vacation",
+        }
+
+        scheduling_signals = {
+            "schedule",
+            "reschedule",
+            "meeting",
+            "interview",
+            "calendar",
+            "appointment",
+        }
+
+        compliance_signals = {
+            "overtime",
+            "harassment",
+            "discrimination",
+            "retaliation",
+            "salary",
+            "contract",
+            "misconduct",
+            "confidential",
+            "complaint",
+        }
+
+        if any(signal in text for signal in leave_signals):
+            return IntentClassificationResult(
+                intent="leave",
+                confidence=max(result.confidence, 0.9),
+                reasoning_summary=(
+                    "Corrected to leave because the request contains explicit leave-related terms."
+                ),
+            )
+
+        if any(signal in text for signal in scheduling_signals):
+            return IntentClassificationResult(
+                intent="scheduling",
+                confidence=max(result.confidence, 0.9),
+                reasoning_summary=(
+                    "Corrected to scheduling because the request contains explicit scheduling-related terms."
+                ),
+            )
+
+        if any(signal in text for signal in compliance_signals):
+            return IntentClassificationResult(
+                intent="compliance",
+                confidence=max(result.confidence, 0.9),
+                reasoning_summary=(
+                    "Corrected to compliance because the request contains explicit compliance-related terms."
+                ),
+            )
+
+        return result
 
     @staticmethod
     def _clarification_result(reason: str) -> IntentClassificationResult:
