@@ -369,3 +369,116 @@ def test_intent_classifier_corrects_annual_leave_to_leave():
 
     assert corrected.intent == "leave"
     assert corrected.confidence >= 0.9
+
+def test_get_policy_sources_for_hr_request(monkeypatch):
+    class MockWorkflow:
+        def __init__(self, db):
+            self.db = db
+
+        def run(self, user_id: str, message: str):
+            from uuid import uuid4
+
+            from app.database import Document, DocumentChunk
+            from app.services.hr_request_service import HRRequestService
+
+            request_id = str(uuid4())
+            service = HRRequestService(self.db)
+
+            service.create_request(
+                request_id=request_id,
+                user_id=user_id,
+                message=message,
+                source_type="api",
+            )
+
+            document = Document(
+                title="Overtime Policy",
+                document_type="policy",
+                filename=f"test_overtime_policy_{request_id}.md",
+                source_path="data/hr_documents/overtime_policy.md",
+                source="local_seed",
+                content_hash=f"test_hash_{request_id}",
+            )
+            self.db.add(document)
+            self.db.commit()
+            self.db.refresh(document)
+
+            chunk = DocumentChunk(
+                document_id=document.id,
+                chunk_index=0,
+                content="Overtime must be approved before it is worked.",
+                token_estimate=12,
+            )
+            self.db.add(chunk)
+            self.db.commit()
+            self.db.refresh(chunk)
+
+            service.update_request_result(
+                request_id=request_id,
+                intent="compliance",
+                confidence=0.9,
+                selected_agent="compliance_agent",
+                response="Mock compliance response.",
+                status="success",
+                error_message=None,
+            )
+
+            service.create_agent_run(
+                request_id=request_id,
+                agent_name="compliance_agent",
+                input_summary=message,
+                output_summary="Mock compliance response.",
+                status="success",
+                error_message=None,
+            )
+
+            service.create_policy_sources(
+                request_id=request_id,
+                policy_sources=[
+                    {
+                        "document_id": document.id,
+                        "document_title": document.title,
+                        "filename": document.filename,
+                        "chunk_id": chunk.id,
+                        "chunk_index": chunk.chunk_index,
+                        "score": 5,
+                    }
+                ],
+            )
+
+            return {
+                "request_id": request_id,
+                "intent": "compliance",
+                "confidence": 0.9,
+                "selected_agent": "compliance_agent",
+                "response": "Mock compliance response.",
+                "memory_used": True,
+            }
+
+    monkeypatch.setattr(
+        "app.api.routes_requests.HRWorkflow",
+        MockWorkflow,
+    )
+
+    payload = {
+        "user_id": "test_user_policy_sources",
+        "message": "Can I work overtime first and get approval later?",
+    }
+
+    request_response = client.post("/requests", json=payload)
+
+    assert request_response.status_code == 200
+    request_id = request_response.json()["request_id"]
+
+    response = client.get(f"/hr-requests/{request_id}/policy-sources")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert isinstance(data, list)
+    assert len(data) == 1
+    assert data[0]["request_id"] == request_id
+    assert data[0]["document_title"] == "Overtime Policy"
+    assert data[0]["filename"].startswith("test_overtime_policy_")
+    assert data[0]["chunk_index"] == 0
+    assert data[0]["score"] == 5
