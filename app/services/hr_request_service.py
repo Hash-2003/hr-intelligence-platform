@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import cast
 
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
@@ -47,10 +48,11 @@ class HRRequestService:
         error_message: str | None = None,
     ) -> HRRequest | None:
         """Update an HR request with classification and response results."""
-        request = (
+        request = cast(
+            HRRequest | None,
             self.db.query(HRRequest)
             .filter(HRRequest.request_id == request_id)
-            .first()
+            .first(),
         )
 
         if request is None:
@@ -102,7 +104,10 @@ class HRRequestService:
         if user_id:
             query = query.filter(HRRequest.user_id == user_id)
 
-        return query.order_by(desc(HRRequest.created_at)).limit(limit).all()
+        return cast(
+            list[HRRequest],
+            query.order_by(desc(HRRequest.created_at)).limit(limit).all(),
+        )
 
     def get_request_by_id(self, request_id: str) -> HRRequest | None:
         """Retrieve one HR request by request ID."""
@@ -114,11 +119,12 @@ class HRRequestService:
 
     def get_agent_runs(self, request_id: str) -> list[AgentRun]:
         """Retrieve agent runs for a specific HR request."""
-        return (
+        return cast(
+            list[AgentRun],
             self.db.query(AgentRun)
             .filter(AgentRun.request_id == request_id)
             .order_by(desc(AgentRun.started_at))
-            .all()
+            .all(),
         )
 
     def create_policy_sources(
@@ -152,9 +158,10 @@ class HRRequestService:
 
     def get_policy_sources(self, request_id: str) -> list[RequestPolicySource]:
         """Retrieve policy sources used by one HR request."""
-        return (
+        return cast(
+            list[RequestPolicySource],
             self.db.query(RequestPolicySource)
             .filter(RequestPolicySource.request_id == request_id)
             .order_by(RequestPolicySource.score.desc())
-            .all()
+            .all(),
         )
