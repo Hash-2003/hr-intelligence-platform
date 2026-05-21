@@ -482,3 +482,102 @@ def test_get_policy_sources_for_hr_request(monkeypatch):
     assert data[0]["filename"].startswith("test_overtime_policy_")
     assert data[0]["chunk_index"] == 0
     assert data[0]["score"] == 5
+
+def test_email_webhook_processes_email_like_request(monkeypatch):
+    class MockWorkflow:
+        def __init__(self, db):
+            self.db = db
+
+        def run(self, user_id: str, message: str):
+            from uuid import uuid4
+
+            from app.services.hr_request_service import HRRequestService
+
+            request_id = str(uuid4())
+            service = HRRequestService(self.db)
+
+            service.create_request(
+                request_id=request_id,
+                user_id=user_id,
+                message=message,
+                source_type="email_webhook",
+                subject="Annual leave request",
+            )
+
+            service.update_request_result(
+                request_id=request_id,
+                intent="leave",
+                confidence=0.95,
+                selected_agent="leave_agent",
+                response="Mock leave response generated from email.",
+                status="success",
+                error_message=None,
+            )
+
+            service.create_agent_run(
+                request_id=request_id,
+                agent_name="leave_agent",
+                input_summary=message,
+                output_summary="Mock leave response generated from email.",
+                status="success",
+                error_message=None,
+            )
+
+            return {
+                "request_id": request_id,
+                "intent": "leave",
+                "confidence": 0.95,
+                "selected_agent": "leave_agent",
+                "response": "Mock leave response generated from email.",
+                "memory_used": True,
+            }
+
+    monkeypatch.setattr(
+        "app.api.routes_webhooks.HRWorkflow",
+        MockWorkflow,
+    )
+
+    payload = {
+        "sender_email": "employee@example.com",
+        "sender_name": "Kasun Perera",
+        "subject": "Annual leave request",
+        "body": "I would like to apply for annual leave next Monday and Tuesday.",
+        "received_at": "2026-05-20T10:30:00",
+    }
+
+    response = client.post("/webhooks/email", json=payload)
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert "event_id" in data
+    assert "request_id" in data
+    assert data["intent"] == "leave"
+    assert data["agent"] == "leave_agent"
+    assert data["response"] == "Mock leave response generated from email."
+    assert data["status"] == "processed"
+
+def test_email_webhook_rejects_invalid_email():
+    payload = {
+        "sender_email": "not-an-email",
+        "sender_name": "Invalid User",
+        "subject": "Annual leave request",
+        "body": "I would like to apply for annual leave.",
+        "received_at": "2026-05-20T10:30:00",
+    }
+
+    response = client.post("/webhooks/email", json=payload)
+
+    assert response.status_code == 422
+
+def test_email_webhook_rejects_missing_body():
+    payload = {
+        "sender_email": "employee@example.com",
+        "sender_name": "Kasun Perera",
+        "subject": "Annual leave request",
+        "received_at": "2026-05-20T10:30:00",
+    }
+
+    response = client.post("/webhooks/email", json=payload)
+
+    assert response.status_code == 422
