@@ -352,3 +352,20 @@ def test_get_missing_document_returns_404():
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Document not found."
+
+def test_intent_classifier_corrects_annual_leave_to_leave():
+    from app.services.intent_classifier import IntentClassificationResult, IntentClassifier
+
+    original = IntentClassificationResult(
+        intent="compliance",
+        confidence=0.8,
+        reasoning_summary="Original LLM result.",
+    )
+
+    corrected = IntentClassifier._correct_obvious_intent(
+        message="How many annual leave days do I get?",
+        result=original,
+    )
+
+    assert corrected.intent == "leave"
+    assert corrected.confidence >= 0.9
