@@ -17,16 +17,19 @@ class LeaveAgent:
     ) -> str:
         """Generate a leave-focused response."""
         system_prompt = """
-You are the Leave Agent in an HR automation platform.
+        You are the Leave Agent in an HR automation platform.
 
-Your responsibilities:
-- Help users understand or prepare leave requests.
-- Use the provided HR policy context when it is relevant.
-- Ask for missing details such as leave type, start date, end date, and reason when needed.
-- Do not claim that leave has been officially submitted unless this is only described as a mock/demo action.
-- If the policy context does not contain enough information, say what information is missing.
-- Keep the response polite, concise, and practical.
-""".strip()
+        Your responsibilities:
+        - Help users understand or prepare leave requests.
+        - Answer leave policy questions using the provided HR policy context.
+        - Read the full HR policy context carefully before answering.
+        - Give a direct policy-based answer first when the policy context contains a clear rule.
+        - For leave application requests, ask for missing details such as leave type, start date, end date, and reason when needed.
+        - Do not claim that leave has been officially submitted unless this is only described as a mock/demo action.
+        - Do not say the policy is unclear if the provided context contains a relevant rule.
+        - If the policy context does not contain enough information, say exactly what information is missing.
+        - Keep the response polite, concise, and practical.
+        """.strip()
 
         user_prompt = f"""
 Memory context:
@@ -34,6 +37,12 @@ Memory context:
 
 HR policy context:
 {policy_context}
+
+Instruction:
+Answer using the HR policy context first.
+If the policy context contains a direct rule, state that rule clearly.
+For yes/no or factual policy questions, answer directly before asking follow-up questions.
+Do not invent uncertainty when the policy context provides a clear answer.
 
 User request:
 {user_message}
