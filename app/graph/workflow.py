@@ -1,5 +1,7 @@
 from typing import TypedDict
 from uuid import uuid4
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from langgraph.graph import END, StateGraph
 from sqlalchemy.orm import Session
@@ -25,6 +27,7 @@ class WorkflowState(TypedDict, total=False):
     message: str
     memory_context: str
     memory_used: bool
+    datetime_context: str
     policy_context: str
     policy_sources_used: list[dict]
     intent: str
@@ -81,6 +84,7 @@ class HRWorkflow:
         graph = StateGraph(WorkflowState)
 
         graph.add_node("load_memory", self._load_memory)
+        graph.add_node("load_datetime_context", self._load_datetime_context)
         graph.add_node("classify_intent", self._classify_intent)
         graph.add_node("scheduling_agent", self._run_scheduling_agent)
         graph.add_node("leave_agent", self._run_leave_agent)
@@ -92,8 +96,8 @@ class HRWorkflow:
 
         graph.set_entry_point("load_memory")
 
-        graph.add_edge("load_memory", "classify_intent")
-
+        graph.add_edge("load_memory", "load_datetime_context")
+        graph.add_edge("load_datetime_context", "classify_intent")
         graph.add_edge("classify_intent", "retrieve_policy_context")
 
         graph.add_conditional_edges(
@@ -127,6 +131,31 @@ class HRWorkflow:
             **state,
             "memory_context": memory_context,
             "memory_used": memory_used,
+        }
+
+    def _load_datetime_context(self, state: WorkflowState) -> WorkflowState:
+        """Load current datetime context for date-sensitive HR reasoning."""
+        now_utc = datetime.now(timezone.utc)
+
+        try:
+            app_tz = ZoneInfo(self.settings.app_timezone)
+        except ZoneInfoNotFoundError:
+            app_tz = timezone.utc
+
+        now_local = now_utc.astimezone(app_tz)
+
+        datetime_context = (
+            f"Current UTC datetime: {now_utc.isoformat()}\n"
+            f"Configured application timezone: {self.settings.app_timezone}\n"
+            f"Current application-local datetime: {now_local.isoformat()}\n"
+            "Use the application-local datetime when interpreting relative dates such as "
+            "today, tomorrow, next Monday, this Friday, or within 24 hours. "
+            "If an exact date cannot be determined confidently, ask the user to confirm."
+        )
+
+        return {
+            **state,
+            "datetime_context": datetime_context,
         }
 
     def _classify_intent(self, state: WorkflowState) -> WorkflowState:
@@ -192,6 +221,10 @@ class HRWorkflow:
                 policy_context=state.get(
                     "policy_context",
                     "No relevant HR policy context found.",
+                ),
+                datetime_context=state.get(
+                    "datetime_context",
+                    "No current datetime context available.",
                 ),
             )
 

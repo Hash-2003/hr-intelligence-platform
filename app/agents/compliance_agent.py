@@ -13,6 +13,7 @@ class ComplianceAgent:
             self,
             user_message: str,
             memory_context: str,
+            datetime_context: str,
             policy_context: str,
     ) -> str:
         """Generate a compliance-focused response."""
@@ -36,6 +37,9 @@ class ComplianceAgent:
         user_prompt = f"""
         Memory context:
         {memory_context}
+        
+        Datetime context:
+        {datetime_context}
 
         HR policy context:
         {policy_context}
@@ -45,6 +49,7 @@ class ComplianceAgent:
         If the policy context contains a direct rule, state that rule clearly.
         For yes/no policy questions, start with a clear yes/no answer.
         Do not invent uncertainty when the policy context provides a clear answer.
+        When interpreting relative dates or time limits, use the datetime context.
 
         User request:
         {user_message}

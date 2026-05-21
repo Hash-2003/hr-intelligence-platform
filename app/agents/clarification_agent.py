@@ -13,6 +13,7 @@ class ClarificationAgent:
             self,
             user_message: str,
             memory_context: str,
+            datetime_context: str,
             policy_context: str = "No relevant HR policy context available.",
     ) -> str:
         """Generate a clarification response."""
@@ -31,8 +32,14 @@ class ClarificationAgent:
 Memory context:
 {memory_context}
 
+Datetime context:
+{datetime_context}
+
 HR policy context:
 {policy_context}
+
+Instruction:
+If the user uses an unclear relative date or ambiguous reference, ask a clarifying question.
 
 User request:
 {user_message}

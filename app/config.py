@@ -8,6 +8,7 @@ class Settings(BaseSettings):
 
     app_name: str = "HR Intelligence Platform"
     app_env: str = "development"
+    app_timezone: str = "Asia/Colombo"
     database_url: str = "sqlite:///./hr_agent_engine.db"
 
     llm_provider: str = "groq"

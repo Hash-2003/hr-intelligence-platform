@@ -13,6 +13,7 @@ class LeaveAgent:
             self,
             user_message: str,
             memory_context: str,
+            datetime_context: str,
             policy_context: str,
     ) -> str:
         """Generate a leave-focused response."""
@@ -35,6 +36,9 @@ class LeaveAgent:
 Memory context:
 {memory_context}
 
+Datetime context:
+{datetime_context}
+
 HR policy context:
 {policy_context}
 
@@ -43,6 +47,9 @@ Answer using the HR policy context first.
 If the policy context contains a direct rule, state that rule clearly.
 For yes/no or factual policy questions, answer directly before asking follow-up questions.
 Do not invent uncertainty when the policy context provides a clear answer.
+When interpreting relative dates, use the application-local datetime from the datetime context.
+If the user says "next Monday", "tomorrow", "this Friday", or another relative date, calculate the most likely calendar date from the application-local datetime.
+Only ask the user to confirm the date if the relative date remains genuinely ambiguous after using the datetime context.
 
 User request:
 {user_message}

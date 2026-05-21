@@ -13,7 +13,9 @@ class SchedulingAgent:
             self,
             user_message: str,
             memory_context: str,
+            datetime_context: str,
             policy_context: str = "No relevant HR policy context required.",
+
     ) -> str:
         """Generate a scheduling-focused response."""
         system_prompt = """
@@ -31,8 +33,16 @@ class SchedulingAgent:
 Memory context:
 {memory_context}
 
+Datetime context:
+{datetime_context}
+
 HR policy context:
 {policy_context}
+
+Instruction:
+Use the application-local datetime from the datetime context when interpreting relative scheduling terms such as tomorrow, next Monday, or this Friday.
+If the user provides a relative date, calculate the most likely calendar date from the application-local datetime.
+Ask for confirmation only if the date or time remains genuinely ambiguous.
 
 User request:
 {user_message}
