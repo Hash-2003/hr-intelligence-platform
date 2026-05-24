@@ -32,6 +32,11 @@ The project started as a technical challenge implementation and is now being ext
 - Environment-based configuration using `.env`
 - Automated API tests
 - Postman collection for API testing
+- Email-like webhook intake for HR requests
+- Timezone-aware datetime context using configurable `APP_TIMEZONE`
+- Webhook `received_at` timestamp support for date-sensitive requests
+- Deterministic leave date fact extraction for relative leave dates
+- Leave notice deadline validation before LLM response generation
 
 ## Planned Improvements
 
@@ -62,19 +67,19 @@ The project started as a technical challenge implementation and is now being ext
 The request pipeline follows this flow:
 
 ```text
-POST /requests
+POST /requests or POST /webhooks/email
     ↓
 Create HR request record
     ↓
 Load STM and LTM memory
     ↓
-LLM intent classification
+Load timezone-aware datetime context
     ↓
-Apply high-signal intent correction guardrails
+Classify intent
     ↓
 Retrieve relevant HR policy chunks
     ↓
-Inject memory and policy context into agent prompt
+Resolve deterministic leave date facts, if leave intent
     ↓
 Route using LangGraph conditional edges
     ↓
@@ -82,7 +87,7 @@ Specialist agent execution
     ↓
 Save agent run record
     ↓
-Persist policy sources used by the request
+Persist policy sources used
     ↓
 Update HR request status and result
     ↓
@@ -93,6 +98,7 @@ Promote significant context to long-term memory
 Write append-only audit log
     ↓
 Return structured response
+
 ```
 
 Supported intents:
@@ -121,6 +127,34 @@ clarification
 | GET | `/hr-requests/{request_id}` | Retrieve a specific HR request |
 | GET | `/hr-requests/{request_id}/agent-runs` | Retrieve agent execution records for a request |
 | GET | `/hr-requests/{request_id}/policy-sources` | Retrieve policy document chunks used by a request |
+| POST | `/webhooks/email` | Process an incoming email-like HR request webhook |
+  
+## Date-Aware Leave Handling
+
+The system includes deterministic leave date fact extraction for leave-related requests.
+
+The LLM is not responsible for calculating leave dates, notice deadlines, or notice status. Instead, the backend resolves supported relative date phrases in code and passes structured facts to the Leave Agent.
+
+Currently supported examples include:
+
+```text
+next Monday
+tomorrow
+today
+a week after next Monday
+one week after next Monday
+for 2 days
+```
+For example, if an email is received on 2026-05-17 and the user asks for annual leave for 2 days starting from a week after next Monday, the backend resolves:
+```text
+requested start date: 2026-05-25 Monday
+requested end date: 2026-05-26 Tuesday
+duration: 2 days
+latest standard submission date: 2026-05-18 Monday
+notice status: not_missed
+```
+The Leave Agent then uses these resolved facts to generate a human-friendly response without performing calendar arithmetic itself.
+
 
 ## Setup Instructions
 
@@ -158,14 +192,15 @@ Example:
 
 ```env
 APP_NAME=HR Intelligence Platform
+APP_TIMEZONE=Asia/Colombo
 APP_ENV=development
 DATABASE_URL=sqlite:///./hr_intelligence_platform.db
 
 LLM_PROVIDER=groq
 LLM_API_KEY=your_api_key_here
-LLM_MODEL=llama-3.1-8b-instant
+LLM_MODEL=openai/gpt-oss-120b
 LLM_BASE_URL=https://api.groq.com/openai/v1
-LLM_TIMEOUT_SECONDS=20
+LLM_TIMEOUT_SECONDS=30
 LLM_MAX_RETRIES=2
 
 INTENT_CONFIDENCE_THRESHOLD=0.65
@@ -173,7 +208,18 @@ STM_LIMIT_PER_USER=10
 LTM_SIGNIFICANCE_THRESHOLD=0.75
 ```
 
-The system uses an OpenAI-compatible API client, so providers such as Groq can be used by setting the correct `LLM_BASE_URL`.
+## Model Configuration
+
+The application uses an OpenAI-compatible LLM client. The model can be changed through `.env`.
+
+Recommended Groq model for the current implementation:
+
+```env
+LLM_PROVIDER=groq
+LLM_MODEL=openai/gpt-oss-120b
+LLM_BASE_URL=https://api.groq.com/openai/v1
+```
+A deterministic backend service handles leave-date calculation, so the LLM is mainly used for intent classification, policy-grounded explanation, and response generation.
 
 ## Run the Application
 

@@ -42,6 +42,12 @@ The current system already includes:
 - Policy context injection into Leave and Compliance agents
 - Persisted policy sources used by HR requests
 - Policy source retrieval endpoint
+- Email-like webhook intake
+- Webhook `received_at` timestamp support
+- Timezone-aware datetime context
+- Deterministic leave date fact extraction
+- Leave notice deadline validation
+- Model configuration tested with multiple Groq-hosted models
 
 ---
 
@@ -127,25 +133,25 @@ Remaining:
 
 ---
 
-### Phase 4: Email/Webhook Intake
+### Phase 4: Webhook Intake
 
-Goal: support external request triggers from email parsers, automation tools, or webhook-based integrations.
+Goal: support external request triggers.
 
-Planned features:
+Completed:
 
-- Add `/webhooks/email` endpoint
-- Store incoming email sender, subject, body, and timestamp
-- Convert email events into HR requests
-- Classify email intent
-- Run the existing LangGraph workflow
-- Generate a draft response
-- Keep the response as draft for human review
+- Added `/webhooks/email` endpoint
+- Added email event persistence
+- Converted incoming email-like events into HR requests
+- Reused the existing LangGraph workflow for webhook requests
+- Linked processed email events to generated HR requests
+- Used webhook `received_at` as the reference timestamp for date-sensitive reasoning
+- Added tests for webhook validation and metadata passing
 
-Initial implementation should use a generic webhook before integrating Gmail or n8n.
+Remaining:
 
-Expected outcome:
-
-- External tools such as n8n, Zapier, or email parsers can trigger HR request processing through the backend.
+- Add richer email event retrieval endpoints
+- Add n8n/Gmail integration guide
+- Add retry/failure status handling for webhook processing request processing through the backend.
 
 ---
 
@@ -270,20 +276,27 @@ Expected outcome:
 
 - The project becomes easier to deploy, test, and extend in a realistic engineering environment.
 
-### Future Privacy Hardening: PII Redaction Before LLM Calls
+### Date-Sensitive Leave Handling
 
-Planned feature:
+Goal: avoid relying on the LLM for calendar arithmetic and leave notice validation.
 
-- Add a PII redaction layer before sending user messages, email bodies, or document excerpts to the LLM
-- Redact or pseudonymize sensitive fields such as names, emails, phone numbers, employee IDs, addresses, salary details, and medical information
-- Keep raw events stored securely while sending only sanitized prompt content to the LLM
-- Avoid storing raw sensitive prompts in audit logs
-- Store redacted summaries and trace metadata for debugging and review
-- Consider hashing stable identifiers for internal matching where appropriate
-- Keep human review for sensitive HR cases such as harassment, medical leave, disciplinary concerns, and payroll issues
+Completed:
 
-Reason:
-HR systems process sensitive employee information. Even if the LLM is self-hosted or enterprise-hosted, the platform should minimize unnecessary exposure of personal data and avoid leaking sensitive information through prompts, logs, or audit records.
+- Added timezone configuration through `APP_TIMEZONE`
+- Added timezone-aware datetime context
+- Added deterministic leave date fact extraction
+- Supported common relative date phrases such as `next Monday`, `tomorrow`, and `a week after next Monday`
+- Added leave duration extraction for phrases like `for 2 days`
+- Calculated latest standard submission date using backend logic
+- Calculated notice status as `missed`, `deadline_today`, `not_missed`, or `unknown`
+- Passed resolved leave date facts to the Leave Agent
+- Added tests for leave date resolution edge cases
+
+Remaining:
+
+- Support more natural date expressions
+- Support public holidays/weekends if HR policy requires business-day calculations
+- Add richer date parser or controlled date extraction layer if needed
 ---
 
 
@@ -318,3 +331,4 @@ Recommended first code changes:
 8. Add tests for webhook intake and request creation.
 
 This should be implemented before Gmail or n8n integration so that the backend remains testable without external OAuth or automation dependencies.
+
