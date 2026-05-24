@@ -34,6 +34,9 @@ def process_email_webhook(
     result = workflow.run(
         user_id=str(payload.sender_email),
         message=workflow_message,
+        source_type="email_webhook",
+        subject=payload.subject,
+        reference_datetime=payload.received_at,
     )
 
     email_service.mark_processed(

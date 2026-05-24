@@ -37,6 +37,9 @@ class WorkflowState(TypedDict, total=False):
     response: str
     status: str
     error_message: str | None
+    reference_datetime: datetime | None
+    source_type: str
+    subject: str | None
 
 
 class HRWorkflow:
@@ -58,7 +61,14 @@ class HRWorkflow:
 
         self.graph = self._build_graph()
 
-    def run(self, user_id: str, message: str) -> WorkflowState:
+    def run(
+            self,
+            user_id: str,
+            message: str,
+            source_type: str = "api",
+            subject: str | None = None,
+            reference_datetime: datetime | None = None,
+    ) -> WorkflowState:
         """Run the workflow for one user request."""
         request_id = str(uuid4())
 
@@ -66,13 +76,17 @@ class HRWorkflow:
             request_id=request_id,
             user_id=user_id,
             message=message,
-            source_type="api",
+            source_type=source_type,
+            subject=subject,
         )
 
         initial_state: WorkflowState = {
             "request_id": request_id,
             "user_id": user_id,
             "message": message,
+            "source_type": source_type,
+            "subject": subject,
+            "reference_datetime": reference_datetime,
             "status": "success",
             "error_message": None,
         }
@@ -135,7 +149,18 @@ class HRWorkflow:
 
     def _load_datetime_context(self, state: WorkflowState) -> WorkflowState:
         """Load deterministic datetime context for date-sensitive HR reasoning."""
-        now_utc = datetime.now(timezone.utc)
+        reference_datetime = state.get("reference_datetime")
+
+        if reference_datetime is None:
+            now_utc = datetime.now(timezone.utc)
+            reference_source = "current server time"
+        else:
+            if reference_datetime.tzinfo is None:
+                now_utc = reference_datetime.replace(tzinfo=timezone.utc)
+            else:
+                now_utc = reference_datetime.astimezone(timezone.utc)
+
+            reference_source = f"{state.get('source_type', 'request')} reference timestamp"
 
         try:
             app_tz = ZoneInfo(self.settings.app_timezone)
@@ -185,9 +210,10 @@ class HRWorkflow:
             )
 
         datetime_context = (
-            f"Current UTC datetime: {now_utc.isoformat()}\n"
+            f"Reference datetime source: {reference_source}\n"
+            f"Reference UTC datetime: {now_utc.isoformat()}\n"
             f"Configured application timezone: {self.settings.app_timezone}\n"
-            f"Current application-local datetime: {now_local.isoformat()}\n\n"
+            f"Reference application-local datetime: {now_local.isoformat()}\n\n"
             "Upcoming local calendar:\n"
             f"{chr(10).join(upcoming_days)}\n\n"
             "Resolved next weekday dates:\n"
