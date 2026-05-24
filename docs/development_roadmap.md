@@ -264,12 +264,28 @@ Planned improvements:
 - CI workflow for tests
 - Improved test database isolation
 - Basic observability and health diagnostics
+- Add PII and sensitive-data redaction before LLM calls
 
 Expected outcome:
 
 - The project becomes easier to deploy, test, and extend in a realistic engineering environment.
 
+### Future Privacy Hardening: PII Redaction Before LLM Calls
+
+Planned feature:
+
+- Add a PII redaction layer before sending user messages, email bodies, or document excerpts to the LLM
+- Redact or pseudonymize sensitive fields such as names, emails, phone numbers, employee IDs, addresses, salary details, and medical information
+- Keep raw events stored securely while sending only sanitized prompt content to the LLM
+- Avoid storing raw sensitive prompts in audit logs
+- Store redacted summaries and trace metadata for debugging and review
+- Consider hashing stable identifiers for internal matching where appropriate
+- Keep human review for sensitive HR cases such as harassment, medical leave, disciplinary concerns, and payroll issues
+
+Reason:
+HR systems process sensitive employee information. Even if the LLM is self-hosted or enterprise-hosted, the platform should minimize unnecessary exposure of personal data and avoid leaking sensitive information through prompts, logs, or audit records.
 ---
+
 
 ## Design Principles
 
