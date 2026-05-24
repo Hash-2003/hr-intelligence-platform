@@ -30,23 +30,24 @@ class SchedulingAgent:
         """.strip()
 
         user_prompt = f"""
-Memory context:
-{memory_context}
+        Memory context:
+        {memory_context}
 
-Datetime context:
-{datetime_context}
+        Datetime context:
+        {datetime_context}
 
-HR policy context:
-{policy_context}
+        HR policy context:
+        {policy_context}
 
-Instruction:
-Use the application-local datetime from the datetime context when interpreting relative scheduling terms such as tomorrow, next Monday, or this Friday.
-If the user provides a relative date, calculate the most likely calendar date from the application-local datetime.
-Ask for confirmation only if the date or time remains genuinely ambiguous.
+        Instruction:
+        Use the resolved date values in the datetime context exactly.
+        Do not manually recalculate weekday dates.
+        If the user provides a relative date, use the resolved date from the datetime context.
+        Ask for confirmation only if the date or time remains genuinely ambiguous.
 
-User request:
-{user_message}
-""".strip()
+        User request:
+        {user_message}
+        """.strip()
 
         return self.llm_service.chat_completion(
             system_prompt=system_prompt,

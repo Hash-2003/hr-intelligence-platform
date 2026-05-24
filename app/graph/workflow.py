@@ -1,6 +1,6 @@
 from typing import TypedDict
 from uuid import uuid4
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from langgraph.graph import END, StateGraph
@@ -134,7 +134,7 @@ class HRWorkflow:
         }
 
     def _load_datetime_context(self, state: WorkflowState) -> WorkflowState:
-        """Load current datetime context for date-sensitive HR reasoning."""
+        """Load deterministic datetime context for date-sensitive HR reasoning."""
         now_utc = datetime.now(timezone.utc)
 
         try:
@@ -143,14 +143,59 @@ class HRWorkflow:
             app_tz = timezone.utc
 
         now_local = now_utc.astimezone(app_tz)
+        today_local = now_local.date()
+
+        upcoming_days: list[str] = []
+        for offset in range(0, 14):
+            day = today_local + timedelta(days=offset)
+
+            if offset == 0:
+                label = "today"
+            elif offset == 1:
+                label = "tomorrow"
+            else:
+                label = f"in {offset} days"
+
+            upcoming_days.append(
+                f"- {label}: {day.isoformat()} {day.strftime('%A')}"
+            )
+
+        weekday_names = [
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+        ]
+
+        next_weekdays: list[str] = []
+
+        for weekday_index, weekday_name in enumerate(weekday_names):
+            days_ahead = (weekday_index - today_local.weekday()) % 7
+
+            if days_ahead == 0:
+                days_ahead = 7
+
+            next_date = today_local + timedelta(days=days_ahead)
+
+            next_weekdays.append(
+                f"- next {weekday_name}: {next_date.isoformat()} {weekday_name}"
+            )
 
         datetime_context = (
             f"Current UTC datetime: {now_utc.isoformat()}\n"
             f"Configured application timezone: {self.settings.app_timezone}\n"
-            f"Current application-local datetime: {now_local.isoformat()}\n"
-            "Use the application-local datetime when interpreting relative dates such as "
-            "today, tomorrow, next Monday, this Friday, or within 24 hours. "
-            "If an exact date cannot be determined confidently, ask the user to confirm."
+            f"Current application-local datetime: {now_local.isoformat()}\n\n"
+            "Upcoming local calendar:\n"
+            f"{chr(10).join(upcoming_days)}\n\n"
+            "Resolved next weekday dates:\n"
+            f"{chr(10).join(next_weekdays)}\n\n"
+            "Use the resolved dates above when interpreting relative dates such as "
+            "today, tomorrow, next Monday, next Tuesday, or this Friday. "
+            "Do not manually recalculate weekday dates if they are listed above. "
+            "If the user's wording is still ambiguous, ask for confirmation."
         )
 
         return {
