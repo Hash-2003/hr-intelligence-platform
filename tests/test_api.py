@@ -4,6 +4,9 @@ from app.database import create_db_tables
 from app.main import app
 
 from pathlib import Path
+from datetime import date
+
+from app.services.leave_date_service import LeaveDateService
 
 
 create_db_tables()
@@ -488,7 +491,24 @@ def test_email_webhook_processes_email_like_request(monkeypatch):
         def __init__(self, db):
             self.db = db
 
-        def run(self, user_id: str, message: str):
+        def run(
+                self,
+                user_id: str,
+                message: str,
+                source_type: str = "api",
+                subject: str | None = None,
+                reference_datetime=None,
+        ):
+            assert user_id == "employee@example.com"
+            assert source_type == "email_webhook"
+            assert subject == "Annual leave request"
+            assert reference_datetime is not None
+            assert reference_datetime.year == 2026
+            assert reference_datetime.month == 5
+            assert reference_datetime.day == 20
+            assert "Email subject: Annual leave request" in message
+            assert "Email body:" in message
+
             from uuid import uuid4
 
             from app.services.hr_request_service import HRRequestService
@@ -500,8 +520,8 @@ def test_email_webhook_processes_email_like_request(monkeypatch):
                 request_id=request_id,
                 user_id=user_id,
                 message=message,
-                source_type="email_webhook",
-                subject="Annual leave request",
+                source_type=source_type,
+                subject=subject,
             )
 
             service.update_request_result(
@@ -581,3 +601,162 @@ def test_email_webhook_rejects_missing_body():
     response = client.post("/webhooks/email", json=payload)
 
     assert response.status_code == 422
+
+def test_resolves_tomorrow():
+    service = LeaveDateService()
+
+    facts = service.resolve(
+        message="I want annual leave tomorrow.",
+        reference_date=date(2026, 5, 17),
+    )
+
+    assert facts.found_leave_dates is True
+    assert facts.start_date == date(2026, 5, 18)
+    assert facts.end_date == date(2026, 5, 18)
+    assert facts.submission_deadline == date(2026, 5, 11)
+    assert facts.notice_status == "missed"
+
+
+def test_resolves_today():
+    service = LeaveDateService()
+
+    facts = service.resolve(
+        message="I want annual leave today.",
+        reference_date=date(2026, 5, 17),
+    )
+
+    assert facts.found_leave_dates is True
+    assert facts.start_date == date(2026, 5, 17)
+    assert facts.end_date == date(2026, 5, 17)
+    assert facts.submission_deadline == date(2026, 5, 10)
+    assert facts.notice_status == "missed"
+
+
+def test_next_monday_when_reference_date_is_monday_returns_following_monday():
+    service = LeaveDateService()
+
+    facts = service.resolve(
+        message="I want annual leave next Monday.",
+        reference_date=date(2026, 5, 18),
+    )
+
+    assert facts.found_leave_dates is True
+    assert facts.start_date == date(2026, 5, 25)
+    assert facts.submission_deadline == date(2026, 5, 18)
+    assert facts.notice_status == "deadline_today"
+
+
+def test_invalid_zero_day_duration_defaults_to_one_day():
+    service = LeaveDateService()
+
+    facts = service.resolve(
+        message="I want annual leave for 0 days starting from next Monday.",
+        reference_date=date(2026, 5, 17),
+    )
+
+    assert facts.found_leave_dates is True
+    assert facts.start_date == date(2026, 5, 18)
+    assert facts.duration_days == 1
+    assert facts.end_date == date(2026, 5, 18)
+
+
+def test_unsupported_duration_keeps_duration_as_one_day():
+    service = LeaveDateService()
+
+    facts = service.resolve(
+        message="I want annual leave for two days starting from next Monday.",
+        reference_date=date(2026, 5, 17),
+    )
+
+    assert facts.found_leave_dates is True
+    assert facts.start_date == date(2026, 5, 18)
+    assert facts.duration_days == 1
+    assert facts.end_date == date(2026, 5, 18)
+
+
+def test_build_context_contains_notice_status_and_deadline():
+    service = LeaveDateService()
+
+    facts = service.resolve(
+        message="I want annual leave for 2 days starting from a week after next Monday.",
+        reference_date=date(2026, 5, 17),
+    )
+
+    context = service.build_context(facts)
+
+    assert "Resolved leave date facts:" in context
+    assert "requested start date: 2026-05-25 Monday" in context
+    assert "requested end date: 2026-05-26 Tuesday" in context
+    assert "latest standard submission date: 2026-05-18 Monday" in context
+    assert "notice status: not_missed" in context
+
+def test_intent_classifier_corrects_sick_leave_to_leave():
+    from app.services.intent_classifier import IntentClassificationResult, IntentClassifier
+
+    original = IntentClassificationResult(
+        intent="compliance",
+        confidence=0.7,
+        reasoning_summary="Original LLM result.",
+    )
+
+    corrected = IntentClassifier._correct_obvious_intent(
+        message="I need to apply for sick leave tomorrow.",
+        result=original,
+    )
+
+    assert corrected.intent == "leave"
+    assert corrected.confidence >= 0.9
+
+
+def test_intent_classifier_corrects_interview_to_scheduling():
+    from app.services.intent_classifier import IntentClassificationResult, IntentClassifier
+
+    original = IntentClassificationResult(
+        intent="clarification",
+        confidence=0.7,
+        reasoning_summary="Original LLM result.",
+    )
+
+    corrected = IntentClassifier._correct_obvious_intent(
+        message="Please schedule an interview with Kasun tomorrow.",
+        result=original,
+    )
+
+    assert corrected.intent == "scheduling"
+    assert corrected.confidence >= 0.9
+
+
+def test_intent_classifier_corrects_overtime_to_compliance():
+    from app.services.intent_classifier import IntentClassificationResult, IntentClassifier
+
+    original = IntentClassificationResult(
+        intent="clarification",
+        confidence=0.7,
+        reasoning_summary="Original LLM result.",
+    )
+
+    corrected = IntentClassifier._correct_obvious_intent(
+        message="Can I work overtime without approval?",
+        result=original,
+    )
+
+    assert corrected.intent == "compliance"
+    assert corrected.confidence >= 0.9
+
+
+def test_intent_classifier_corrects_harassment_to_compliance():
+    from app.services.intent_classifier import IntentClassificationResult, IntentClassifier
+
+    original = IntentClassificationResult(
+        intent="clarification",
+        confidence=0.7,
+        reasoning_summary="Original LLM result.",
+    )
+
+    corrected = IntentClassifier._correct_obvious_intent(
+        message="I was harassed by my manager.",
+        result=original,
+    )
+
+    assert corrected.intent == "compliance"
+    assert corrected.confidence >= 0.9

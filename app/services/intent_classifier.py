@@ -127,13 +127,21 @@ User request:
         compliance_signals = {
             "overtime",
             "harassment",
+            "harassed",
+            "harassing",
             "discrimination",
+            "discriminated",
+            "discriminating",
             "retaliation",
+            "retaliated",
             "salary",
             "contract",
             "misconduct",
             "confidential",
+            "confidentiality",
             "complaint",
+            "complaints",
+            "code of conduct",
         }
 
         if any(signal in text for signal in leave_signals):
