@@ -15,6 +15,7 @@ class ComplianceAgent:
             memory_context: str,
             datetime_context: str,
             policy_context: str,
+            leave_date_context: str = "No leave date facts available.",
     ) -> str:
         """Generate a compliance-focused response."""
         system_prompt = """

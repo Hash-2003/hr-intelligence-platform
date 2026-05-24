@@ -15,6 +15,7 @@ class SchedulingAgent:
             memory_context: str,
             datetime_context: str,
             policy_context: str = "No relevant HR policy context required.",
+            leave_date_context: str = "No leave date facts available.",
 
     ) -> str:
         """Generate a scheduling-focused response."""

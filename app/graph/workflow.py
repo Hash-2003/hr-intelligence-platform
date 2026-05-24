@@ -17,6 +17,7 @@ from app.services.memory_service import MemoryService
 from app.services.llm_service import LLMServiceError
 from app.services.hr_request_service import HRRequestService
 from app.services.document_retrieval_service import DocumentRetrievalService
+from app.services.leave_date_service import LeaveDateService
 
 
 class WorkflowState(TypedDict, total=False):
@@ -29,6 +30,7 @@ class WorkflowState(TypedDict, total=False):
     memory_used: bool
     datetime_context: str
     policy_context: str
+    leave_date_context: str
     policy_sources_used: list[dict]
     intent: str
     confidence: float
@@ -52,6 +54,7 @@ class HRWorkflow:
         self.audit_service = AuditService(db)
         self.hr_request_service = HRRequestService(db)
         self.document_retrieval_service = DocumentRetrievalService(db)
+        self.leave_date_service = LeaveDateService()
         self.intent_classifier = IntentClassifier()
 
         self.scheduling_agent = SchedulingAgent()
@@ -102,6 +105,7 @@ class HRWorkflow:
         graph.add_node("classify_intent", self._classify_intent)
         graph.add_node("scheduling_agent", self._run_scheduling_agent)
         graph.add_node("leave_agent", self._run_leave_agent)
+        graph.add_node("resolve_leave_dates", self._resolve_leave_dates)
         graph.add_node("compliance_agent", self._run_compliance_agent)
         graph.add_node("clarification_agent", self._run_clarification_agent)
         graph.add_node("retrieve_policy_context", self._retrieve_policy_context)
@@ -113,9 +117,10 @@ class HRWorkflow:
         graph.add_edge("load_memory", "load_datetime_context")
         graph.add_edge("load_datetime_context", "classify_intent")
         graph.add_edge("classify_intent", "retrieve_policy_context")
+        graph.add_edge("retrieve_policy_context", "resolve_leave_dates")
 
         graph.add_conditional_edges(
-            "retrieve_policy_context",
+            "resolve_leave_dates",
             self._route_by_intent,
             {
                 "scheduling": "scheduling_agent",
@@ -269,6 +274,41 @@ class HRWorkflow:
             "policy_sources_used": policy_sources_used,
         }
 
+    def _resolve_leave_dates(self, state: WorkflowState) -> WorkflowState:
+        """Resolve deterministic leave date facts for leave-related requests."""
+        if state.get("intent") != "leave":
+            return {
+                **state,
+                "leave_date_context": "No leave date resolution required for this intent.",
+            }
+
+        reference_datetime = state.get("reference_datetime")
+
+        if reference_datetime is None:
+            reference_local_date = datetime.now(timezone.utc).date()
+        else:
+            if reference_datetime.tzinfo is None:
+                reference_local_date = reference_datetime.date()
+            else:
+                try:
+                    app_tz = ZoneInfo(self.settings.app_timezone)
+                except ZoneInfoNotFoundError:
+                    app_tz = timezone.utc
+
+                reference_local_date = reference_datetime.astimezone(app_tz).date()
+
+        facts = self.leave_date_service.resolve(
+            message=state["message"],
+            reference_date=reference_local_date,
+        )
+
+        leave_date_context = self.leave_date_service.build_context(facts)
+
+        return {
+            **state,
+            "leave_date_context": leave_date_context,
+        }
+
     @staticmethod
     def _route_by_intent(state: WorkflowState) -> str:
         """Return the next graph branch based on classified intent."""
@@ -296,6 +336,10 @@ class HRWorkflow:
                 datetime_context=state.get(
                     "datetime_context",
                     "No current datetime context available.",
+                ),
+                leave_date_context=state.get(
+                    "leave_date_context",
+                    "No leave date facts available.",
                 ),
             )
 
