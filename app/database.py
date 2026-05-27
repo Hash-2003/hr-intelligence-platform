@@ -272,6 +272,10 @@ class AuditLog(Base):
     response_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="success")
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_type: Mapped[str | None] = mapped_column(String(100), index=True, nullable=True)
+    resource_type: Mapped[str | None] = mapped_column(String(100), index=True, nullable=True)
+    resource_id: Mapped[str | None] = mapped_column(String(100), index=True, nullable=True)
+    details_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

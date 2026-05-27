@@ -1,3 +1,5 @@
+import json
+
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
@@ -22,7 +24,7 @@ class AuditService:
         status: str = "success",
         error_message: str | None = None,
     ) -> AuditLog:
-        """Create an append-only audit log entry."""
+        """Create an append-only request-level audit log entry."""
         log = AuditLog(
             request_id=request_id,
             user_id=user_id,
@@ -33,6 +35,44 @@ class AuditService:
             response_summary=response_summary,
             status=status,
             error_message=error_message,
+            event_type="request_processed",
+            resource_type="hr_request",
+            resource_id=request_id,
+            details_json=None,
+        )
+
+        self.db.add(log)
+        self.db.commit()
+        self.db.refresh(log)
+
+        return log
+
+    def create_event(
+        self,
+        event_type: str,
+        resource_type: str,
+        resource_id: str,
+        user_id: str = "system",
+        request_id: str | None = None,
+        details: dict | None = None,
+        status: str = "success",
+        error_message: str | None = None,
+    ) -> AuditLog:
+        """Create a generic append-only audit event."""
+        log = AuditLog(
+            request_id=request_id or resource_id,
+            user_id=user_id,
+            message=f"Audit event: {event_type}",
+            classified_intent=None,
+            confidence=None,
+            selected_agent=None,
+            response_summary=None,
+            status=status,
+            error_message=error_message,
+            event_type=event_type,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            details_json=json.dumps(details or {}, default=str),
         )
 
         self.db.add(log)
