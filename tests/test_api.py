@@ -7,6 +7,7 @@ from pathlib import Path
 from datetime import date
 
 from app.services.leave_date_service import LeaveDateService
+from app.services.review_decision_service import ReviewDecisionService
 
 
 create_db_tables()
@@ -760,3 +761,239 @@ def test_intent_classifier_corrects_harassment_to_compliance():
 
     assert corrected.intent == "compliance"
     assert corrected.confidence >= 0.9
+
+def test_simple_leave_request_is_review_optional():
+    service = ReviewDecisionService()
+
+    decision = service.decide(
+        message="I want to apply for annual leave next Monday.",
+        intent="leave",
+        confidence=0.95,
+        selected_agent="leave_agent",
+        policy_sources_used=[{"filename": "leave_policy.md"}],
+        status="success",
+    )
+
+    assert decision.action == "review_optional"
+    assert decision.review_required is False
+    assert decision.priority == "medium"
+    assert decision.decision_source == "deterministic"
+
+
+def test_simple_policy_question_can_be_auto_response():
+    service = ReviewDecisionService()
+
+    decision = service.decide(
+        message="What is the overtime approval policy?",
+        intent="compliance",
+        confidence=0.95,
+        selected_agent="compliance_agent",
+        policy_sources_used=[{"filename": "overtime_policy.md"}],
+        status="success",
+    )
+
+    assert decision.action == "auto_response"
+    assert decision.review_required is False
+    assert decision.priority == "low"
+
+
+def test_harassment_message_requires_human_review():
+    service = ReviewDecisionService()
+
+    decision = service.decide(
+        message="I was harassed by my manager.",
+        intent="compliance",
+        confidence=0.95,
+        selected_agent="compliance_agent",
+        policy_sources_used=[{"filename": "code_of_conduct.md"}],
+        status="success",
+    )
+
+    assert decision.action == "review_required"
+    assert decision.review_required is True
+    assert decision.priority == "high"
+
+
+def test_legal_message_requires_human_review():
+    service = ReviewDecisionService()
+
+    decision = service.decide(
+        message="I will contact a lawyer about this.",
+        intent="compliance",
+        confidence=0.95,
+        selected_agent="compliance_agent",
+        policy_sources_used=[{"filename": "policy.md"}],
+        status="success",
+    )
+
+    assert decision.action == "review_required"
+    assert decision.review_required is True
+    assert decision.priority == "high"
+
+
+def test_security_message_requires_human_review():
+    service = ReviewDecisionService()
+
+    decision = service.decide(
+        message="My work laptop was hacked and files may have leaked.",
+        intent="compliance",
+        confidence=0.95,
+        selected_agent="compliance_agent",
+        policy_sources_used=[{"filename": "policy.md"}],
+        status="success",
+    )
+
+    assert decision.action == "review_required"
+    assert decision.review_required is True
+    assert decision.priority == "high"
+
+
+def test_salary_issue_requires_human_review():
+    service = ReviewDecisionService()
+
+    decision = service.decide(
+        message="My salary payment is wrong.",
+        intent="compliance",
+        confidence=0.9,
+        selected_agent="compliance_agent",
+        policy_sources_used=[{"filename": "policy.md"}],
+        status="success",
+    )
+
+    assert decision.action == "review_required"
+    assert decision.review_required is True
+    assert decision.priority == "high"
+
+
+def test_safety_sensitive_message_escalates():
+    service = ReviewDecisionService()
+
+    decision = service.decide(
+        message="I feel unsafe and this is an emergency.",
+        intent="clarification",
+        confidence=0.8,
+        selected_agent="clarification_agent",
+        policy_sources_used=[],
+        status="success",
+    )
+
+    assert decision.action == "escalated"
+    assert decision.review_required is True
+    assert decision.priority == "critical"
+
+
+def test_low_confidence_requires_review():
+    service = ReviewDecisionService()
+
+    decision = service.decide(
+        message="Can you help me with that thing?",
+        intent="clarification",
+        confidence=0.5,
+        selected_agent="clarification_agent",
+        policy_sources_used=[],
+        status="success",
+    )
+
+    assert decision.action == "review_required"
+    assert decision.review_required is True
+    assert decision.priority == "medium"
+
+
+def test_missing_policy_source_requires_review_for_leave():
+    service = ReviewDecisionService()
+
+    decision = service.decide(
+        message="How many annual leave days do I get?",
+        intent="leave",
+        confidence=0.95,
+        selected_agent="leave_agent",
+        policy_sources_used=[],
+        status="success",
+    )
+
+    assert decision.action == "review_required"
+    assert decision.review_required is True
+    assert decision.priority == "medium"
+
+
+def test_failed_workflow_requires_review():
+    service = ReviewDecisionService()
+
+    decision = service.decide(
+        message="I want annual leave.",
+        intent="leave",
+        confidence=0.9,
+        selected_agent="leave_agent",
+        policy_sources_used=[{"filename": "leave_policy.md"}],
+        status="failed",
+    )
+
+    assert decision.action == "review_required"
+    assert decision.review_required is True
+    assert decision.priority == "high"
+
+
+def test_soft_risk_without_llm_falls_back_to_review_required():
+    service = ReviewDecisionService()
+
+    decision = service.decide(
+        message="My manager is making me uncomfortable.",
+        intent="clarification",
+        confidence=0.8,
+        selected_agent="clarification_agent",
+        policy_sources_used=[],
+        status="success",
+    )
+
+    assert decision.action == "review_required"
+    assert decision.review_required is True
+    assert decision.priority == "medium"
+    assert decision.decision_source == "deterministic_fallback"
+
+
+def test_soft_risk_uses_llm_when_available():
+    class MockLLMService:
+        def chat_completion(self, system_prompt, user_prompt, temperature=0.0):
+            return (
+                '{"action": "review_required", '
+                '"priority": "high", '
+                '"reason": "Possible workplace conduct concern."}'
+            )
+
+    service = ReviewDecisionService(llm_service=MockLLMService())
+
+    decision = service.decide(
+        message="My manager is making me uncomfortable.",
+        intent="clarification",
+        confidence=0.8,
+        selected_agent="clarification_agent",
+        policy_sources_used=[],
+        status="success",
+    )
+
+    assert decision.action == "review_required"
+    assert decision.review_required is True
+    assert decision.priority == "high"
+    assert decision.decision_source == "llm_assisted"
+
+
+def test_llm_invalid_json_falls_back_to_review_required():
+    class MockLLMService:
+        def chat_completion(self, system_prompt, user_prompt, temperature=0.0):
+            return "not valid json"
+
+    service = ReviewDecisionService(llm_service=MockLLMService())
+
+    decision = service.decide(
+        message="My manager is making me uncomfortable.",
+        intent="clarification",
+        confidence=0.8,
+        selected_agent="clarification_agent",
+        policy_sources_used=[],
+        status="success",
+    )
+
+    assert decision.action == "review_required"
+    assert decision.review_required is True
+    assert decision.priority == "medium"
+    assert decision.decision_source == "deterministic_fallback"
