@@ -1,6 +1,6 @@
 # HR Intelligence Platform
 
-HR Intelligence Platform is an LLM-powered backend system for HR request routing, memory-aware agent orchestration, audit logging, controlled HR document ingestion, and traceable policy-grounded response generation.
+HR Intelligence Platform is an LLM-powered backend system for HR request routing, memory-aware agent orchestration, audit logging, controlled HR document ingestion, traceable policy-grounded response generation, email-like webhook intake, and risk-based human review.
 
 The project started as a technical challenge implementation and is now being extended into a more complete AI engineering platform.
 
@@ -26,29 +26,34 @@ The project started as a technical challenge implementation and is now being ext
 - Keyword-based policy context retrieval
 - Policy context injection into agent prompts
 - Persisted policy source traceability for HR requests
+- Email-like webhook intake for HR requests
+- Timezone-aware datetime context using configurable `APP_TIMEZONE`
+- Webhook `received_at` timestamp support for date-sensitive requests
+- Deterministic leave date fact extraction for relative leave dates
+- Leave notice deadline validation before LLM response generation
+- Human-reviewable draft response workflow
+- Risk-based Human-in-the-Loop review metadata
+- Rule-based and optional LLM-assisted review decision layer
+- Draft approval and rejection workflow
 - Append-only audit logging
 - Safe failure handling without exposing raw Python stack traces
 - SQLite database
 - Environment-based configuration using `.env`
 - Automated API tests
 - Postman collection for API testing
-- Email-like webhook intake for HR requests
-- Timezone-aware datetime context using configurable `APP_TIMEZONE`
-- Webhook `received_at` timestamp support for date-sensitive requests
-- Deterministic leave date fact extraction for relative leave dates
-- Leave notice deadline validation before LLM response generation
 
 ## Planned Improvements
 
-- Email/webhook-triggered HR request intake
-- Draft email response generation
-- Human review workflow
 - Source-aware response formatting
 - Embedding-based semantic retrieval
 - Safety Agent for crisis-sensitive or non-HR emergency messages
+- PII and sensitive-data redaction before LLM calls
+- Richer email event retrieval and retry/failure tracking
+- Real email integration through n8n, Gmail, or a mail parser
 - Docker support
 - PostgreSQL and migration support
 - CI workflow
+- Authentication and role-based access control
 
 ## Tech Stack
 
@@ -91,6 +96,10 @@ Persist policy sources used
     ↓
 Update HR request status and result
     ↓
+Apply risk-based review decision logic
+    ↓
+Create reviewable draft response, for webhook requests
+    ↓
 Save short-term memory
     ↓
 Promote significant context to long-term memory
@@ -98,7 +107,6 @@ Promote significant context to long-term memory
 Write append-only audit log
     ↓
 Return structured response
-
 ```
 
 Supported intents:
@@ -128,7 +136,12 @@ clarification
 | GET | `/hr-requests/{request_id}/agent-runs` | Retrieve agent execution records for a request |
 | GET | `/hr-requests/{request_id}/policy-sources` | Retrieve policy document chunks used by a request |
 | POST | `/webhooks/email` | Process an incoming email-like HR request webhook |
-  
+| GET | `/drafts` | Retrieve generated draft responses |
+| GET | `/drafts/{draft_id}` | Retrieve a specific draft response |
+| PATCH | `/drafts/{draft_id}` | Update the body of an editable draft response |
+| POST | `/drafts/{draft_id}/approve` | Mark a draft response as approved |
+| POST | `/drafts/{draft_id}/reject` | Mark a draft response as rejected |
+
 ## Date-Aware Leave Handling
 
 The system includes deterministic leave date fact extraction for leave-related requests.
@@ -145,7 +158,9 @@ a week after next Monday
 one week after next Monday
 for 2 days
 ```
-For example, if an email is received on 2026-05-17 and the user asks for annual leave for 2 days starting from a week after next Monday, the backend resolves:
+
+For example, if an email is received on `2026-05-17` and the user asks for annual leave for 2 days starting from a week after next Monday, the backend resolves:
+
 ```text
 requested start date: 2026-05-25 Monday
 requested end date: 2026-05-26 Tuesday
@@ -153,8 +168,97 @@ duration: 2 days
 latest standard submission date: 2026-05-18 Monday
 notice status: not_missed
 ```
+
 The Leave Agent then uses these resolved facts to generate a human-friendly response without performing calendar arithmetic itself.
 
+## Draft Response Workflow
+
+The system supports a human-reviewable draft response workflow for email-like HR requests.
+
+When an incoming email webhook is processed, the system:
+
+```text
+Receives email-like webhook payload
+    ↓
+Stores the email event
+    ↓
+Creates an HR request
+    ↓
+Runs the LangGraph agent workflow
+    ↓
+Generates an AI-assisted response
+    ↓
+Applies review decision logic
+    ↓
+Stores the response as a draft
+```
+
+The generated response is not treated as a sent email. It is stored as a draft for review.
+
+Each draft stores:
+
+```text
+draft_id
+request_id
+email_event_id
+recipient_email
+subject
+body
+status
+review_action
+review_required
+review_priority
+review_reason
+review_decision_source
+```
+
+Draft lifecycle:
+
+```text
+draft → approved
+draft → rejected
+```
+
+Approving a draft does not send an email. It only marks the response as approved for a future human-controlled workflow.
+
+## Risk-Based Human-in-the-Loop Review
+
+The platform uses a risk-based Human-in-the-Loop design instead of sending every AI-generated response to mandatory human review.
+
+A `ReviewDecisionService` evaluates each processed HR request and assigns review metadata.
+
+Possible review actions:
+
+```text
+auto_response
+review_optional
+review_required
+escalated
+```
+
+Review priorities:
+
+```text
+low
+medium
+high
+critical
+```
+
+The current review decision layer uses deterministic rules first. It can optionally use an LLM-assisted classifier for ambiguous soft-risk cases, but deterministic high-risk rules remain the final authority.
+
+Examples:
+
+| Request Type | Review Action | Reason |
+|---|---|---|
+| Simple policy question | `auto_response` | Low-risk policy FAQ |
+| Normal leave request | `review_optional` | Action-oriented HR request |
+| Harassment/discrimination complaint | `review_required` | Sensitive workplace misconduct concern |
+| Salary/payroll dispute | `review_required` | Sensitive HR topic |
+| Legal/security concern | `review_required` | Legal, compliance, or data-protection risk |
+| Safety-sensitive message | `escalated` | Critical safety concern |
+
+This reduces unnecessary human workload while still routing sensitive or uncertain cases to human review.
 
 ## Setup Instructions
 
@@ -219,6 +323,7 @@ LLM_PROVIDER=groq
 LLM_MODEL=openai/gpt-oss-120b
 LLM_BASE_URL=https://api.groq.com/openai/v1
 ```
+
 A deterministic backend service handles leave-date calculation, so the LLM is mainly used for intent classification, policy-grounded explanation, and response generation.
 
 ## Run the Application
@@ -304,6 +409,43 @@ Example response:
   "agent": "leave_agent",
   "response": "Generated HR response...",
   "memory_used": true
+}
+```
+
+### Process Email-Like Webhook
+
+```http
+POST /webhooks/email
+```
+
+Body:
+
+```json
+{
+  "sender_email": "employee@example.com",
+  "sender_name": "Kasun Perera",
+  "subject": "Annual leave request",
+  "body": "I would like to apply for annual leave for 2 days starting from a week after next Monday.",
+  "received_at": "2026-05-17T10:30:00"
+}
+```
+
+Example response:
+
+```json
+{
+  "event_id": "generated-event-id",
+  "request_id": "generated-request-id",
+  "draft_id": "generated-draft-id",
+  "intent": "leave",
+  "agent": "leave_agent",
+  "response": "Generated HR response...",
+  "status": "processed",
+  "review_action": "review_optional",
+  "review_required": false,
+  "review_priority": "medium",
+  "review_reason": "Leave request detected; draft may be reviewed before action.",
+  "review_decision_source": "deterministic"
 }
 ```
 
@@ -423,6 +565,69 @@ Example response:
 ```
 
 This endpoint improves traceability by showing which policy sources influenced an agent response.
+
+## Draft Response Retrieval and Review
+
+### Retrieve Drafts
+
+```http
+GET /drafts
+```
+
+Optional filters:
+
+```http
+GET /drafts?status=draft
+GET /drafts?review_required=true
+```
+
+### Retrieve One Draft
+
+```http
+GET /drafts/{draft_id}
+```
+
+### Update Draft Body
+
+```http
+PATCH /drafts/{draft_id}
+```
+
+Body:
+
+```json
+{
+  "body": "Updated draft response text."
+}
+```
+
+Only drafts with `status = draft` are editable.
+
+### Approve Draft
+
+```http
+POST /drafts/{draft_id}/approve
+```
+
+This changes the draft status to:
+
+```text
+approved
+```
+
+### Reject Draft
+
+```http
+POST /drafts/{draft_id}/reject
+```
+
+This changes the draft status to:
+
+```text
+rejected
+```
+
+Approval or rejection updates only the stored draft status. The system does not send an email.
 
 ## Document Retrieval
 
@@ -559,14 +764,16 @@ The collection includes requests for health checks, HR request handling, memory 
 
 - The current policy retrieval method is keyword-based rather than embedding-based.
 - Source metadata is persisted, but responses do not yet include source citations in the text.
-- No real HRIS, calendar, leave-management, payroll, or legal system is integrated.
+- No real HRIS, calendar, leave-management, payroll, legal, or email-sending system is integrated.
+- The draft approval workflow does not send emails yet.
 - The system uses controlled local policy documents rather than an admin document management interface.
 - LLM responses depend on the configured provider and model.
 - The current memory retrieval strategy is simple and deterministic.
 - SQLite is suitable for local development, not high-concurrency production deployment.
 - There is no authentication or role-based access control yet.
 - Crisis-sensitive or non-HR emergency messages are not yet handled by a dedicated Safety Agent.
+- PII and sensitive-data redaction before LLM calls is planned but not yet implemented.
 
 ## Project Status
 
-Core backend functionality, controlled document ingestion, traceable policy context retrieval, request persistence, memory, audit logging, and automated tests are implemented.
+Core backend functionality, controlled document ingestion, traceable policy context retrieval, request persistence, memory, audit logging, email-like webhook intake, deterministic leave date handling, draft response workflow, risk-based review metadata, and automated tests are implemented.
