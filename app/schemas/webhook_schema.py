@@ -18,7 +18,13 @@ class EmailWebhookResponse(BaseModel):
 
     event_id: str
     request_id: str
+    draft_id: str
     intent: str
     agent: str
     response: str
     status: str
+    review_action: str
+    review_required: bool
+    review_priority: str
+    review_reason: str
+    review_decision_source: str

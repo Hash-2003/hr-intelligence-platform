@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Generator
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, create_engine
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from app.config import get_settings
@@ -68,6 +68,51 @@ class EmailEvent(Base):
         nullable=False,
     )
 
+class DraftResponse(Base):
+    """Human-reviewable draft response generated for an HR request."""
+
+    __tablename__ = "draft_responses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    draft_id: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
+
+    request_id: Mapped[str] = mapped_column(
+        String(100),
+        ForeignKey("hr_requests.request_id"),
+        index=True,
+        nullable=False,
+    )
+
+    email_event_id: Mapped[str | None] = mapped_column(
+        String(100),
+        ForeignKey("email_events.event_id"),
+        index=True,
+        nullable=True,
+    )
+
+    recipient_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="draft")
+
+    review_action: Mapped[str] = mapped_column(String(50), nullable=False)
+    review_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    review_priority: Mapped[str] = mapped_column(String(50), nullable=False)
+    review_reason: Mapped[str] = mapped_column(Text, nullable=False)
+    review_decision_source: Mapped[str] = mapped_column(String(50), nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
 
 class AgentRun(Base):
     """Record of a specialist agent execution for an HR request."""

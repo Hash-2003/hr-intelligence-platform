@@ -10,6 +10,7 @@ from app.api.routes_requests import router as requests_router
 from app.api.routes_hr_requests import router as hr_requests_router
 from app.api.routes_documents import router as documents_router
 from app.api.routes_webhooks import router as webhooks_router
+from app.api.routes_drafts import router as drafts_router
 from app.config import get_settings
 from app.database import create_db_tables
 
@@ -37,6 +38,7 @@ app.include_router(requests_router)
 app.include_router(hr_requests_router)
 app.include_router(documents_router)
 app.include_router(webhooks_router)
+app.include_router(drafts_router)
 
 
 @app.get("/")
@@ -52,4 +54,5 @@ def root() -> dict:
         "hr_requests": "/hr-requests",
         "documents": "/documents",
         "webhooks": "/webhooks/email",
+        "drafts": "/drafts",
     }
