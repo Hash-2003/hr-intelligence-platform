@@ -2,7 +2,7 @@
 
 ## Project Vision
 
-HR Intelligence Platform is an AI-powered backend platform for HR request intake, document-grounded reasoning, memory-aware agent orchestration, and auditable draft response generation.
+HR Intelligence Platform is an AI-powered backend platform for HR request intake, document-grounded reasoning, memory-aware agent orchestration, deterministic leave-date handling, risk-based Human-in-the-Loop review, and auditable draft response generation.
 
 The system is evolving from a technical challenge MVP into a more complete AI engineering platform demonstrating:
 
@@ -11,9 +11,10 @@ The system is evolving from a technical challenge MVP into a more complete AI en
 - Controlled HR document ingestion
 - Traceable document-grounded retrieval
 - Email/webhook-triggered request intake
+- Deterministic business-rule handling for date-sensitive leave requests
+- Risk-based Human-in-the-Loop review
 - Structured database design
-- Auditability and human-in-the-loop review
-- Production-oriented backend practices
+- Auditability and production-oriented backend practices
 
 ---
 
@@ -30,7 +31,7 @@ The current system already includes:
 - Append-only audit logs
 - SQLite persistence
 - Safe LLM failure handling
-- Pytest API tests
+- Pytest API and service tests
 - Postman collection
 - Technical documentation
 - HR request/case persistence
@@ -39,15 +40,20 @@ The current system already includes:
 - Controlled HR document ingestion from local policy files
 - Document chunk storage
 - Keyword-based HR policy retrieval
-- Policy context injection into Leave and Compliance agents
+- Policy context injection into agents
 - Persisted policy sources used by HR requests
 - Policy source retrieval endpoint
 - Email-like webhook intake
+- Email event persistence
 - Webhook `received_at` timestamp support
-- Timezone-aware datetime context
+- Timezone-aware datetime context through `APP_TIMEZONE`
 - Deterministic leave date fact extraction
 - Leave notice deadline validation
 - Model configuration tested with multiple Groq-hosted models
+- Human-reviewable draft response workflow
+- Draft approval and rejection endpoints
+- Risk-based Human-in-the-Loop review metadata
+- Hybrid `ReviewDecisionService` with deterministic rules and optional LLM-assisted classification for ambiguous soft-risk cases
 
 ---
 
@@ -145,37 +151,94 @@ Completed:
 - Reused the existing LangGraph workflow for webhook requests
 - Linked processed email events to generated HR requests
 - Used webhook `received_at` as the reference timestamp for date-sensitive reasoning
+- Updated webhook response to include generated `draft_id` and review decision metadata
 - Added tests for webhook validation and metadata passing
 
 Remaining:
 
 - Add richer email event retrieval endpoints
 - Add n8n/Gmail integration guide
-- Add retry/failure status handling for webhook processing request processing through the backend.
+- Add retry/failure status handling for webhook processing
+- Add email-source authentication/signature validation for real integrations
 
 ---
 
-### Phase 5: Draft Response Workflow
+### Phase 5: Date-Sensitive Leave Handling
 
-Goal: make generated responses reviewable before any sensitive HR communication is sent.
+Goal: avoid relying on the LLM for calendar arithmetic and leave notice validation.
 
-Planned features:
+Completed:
 
-- Add `draft_responses` table
-- Generate draft HR responses linked to HR requests
-- Add endpoints to list, retrieve, update, approve, and reject drafts
-- Add request status transitions such as `draft_generated`, `needs_review`, `approved`, `rejected`, and `closed`
-- Keep audit logs for review actions
+- Added timezone configuration through `APP_TIMEZONE`
+- Added timezone-aware datetime context
+- Added deterministic leave date fact extraction
+- Supported common relative date phrases such as:
+  - `next Monday`
+  - `tomorrow`
+  - `today`
+  - `a week after next Monday`
+  - `one week after next Monday`
+- Added leave duration extraction for phrases like `for 2 days`
+- Calculated latest standard submission date using backend logic
+- Calculated notice status as `missed`, `deadline_today`, `not_missed`, or `unknown`
+- Passed resolved leave date facts to the Leave Agent
+- Simplified the Leave Agent so the LLM explains resolved facts instead of calculating dates
+- Added tests for leave date resolution edge cases
 
-The system should not automatically send emails in the first version.
+Remaining:
 
-Expected outcome:
-
-- The system supports human-in-the-loop review rather than automatically sending sensitive HR responses.
+- Support more natural date expressions
+- Support public holidays/weekends if HR policy requires business-day calculations
+- Add richer date parser or controlled date extraction layer if needed
+- Support locale-specific date formats if required
 
 ---
 
-### Phase 6: Improved Platform Schema
+### Phase 6: Risk-Based HITL Draft Response Workflow
+
+Goal: prevent AI-generated HR responses from being treated as final outputs without review control.
+
+Completed:
+
+- Added hybrid `ReviewDecisionService`
+- Added deterministic review rules for:
+  - safety-sensitive requests
+  - legal or whistleblowing terms
+  - security/data-protection concerns
+  - workplace misconduct concerns
+  - salary/payroll issues
+  - medical and sensitive HR topics
+- Added optional LLM-assisted classification for ambiguous soft-risk cases
+- Added safe fallback to human review when LLM review classification fails
+- Added `draft_responses` table
+- Added draft response persistence for webhook-generated HR responses
+- Added review metadata to drafts:
+  - `review_action`
+  - `review_required`
+  - `review_priority`
+  - `review_reason`
+  - `review_decision_source`
+- Added draft lifecycle endpoints:
+  - `GET /drafts`
+  - `GET /drafts/{draft_id}`
+  - `PATCH /drafts/{draft_id}`
+  - `POST /drafts/{draft_id}/approve`
+  - `POST /drafts/{draft_id}/reject`
+- Updated webhook response to return `draft_id` and review decision metadata
+- Added tests for review decision behavior and draft workflow behavior
+
+Remaining:
+
+- Add audit events for draft approval, rejection, and edits
+- Add email sending only after approval
+- Add authentication and role-based access control for draft review
+- Add dashboard/UI for HR reviewers
+- Add PII redaction before LLM calls
+- Add reviewer identity tracking once authentication is available
+
+---
+
+### Phase 7: Improved Platform Schema
 
 Goal: move from a simple local assessment schema toward a more complete platform schema.
 
@@ -209,11 +272,18 @@ Suggested purpose of each table:
 | `document_chunks` | Stores extracted and chunked text from documents. |
 | `request_policy_sources` | Stores policy chunks used by each HR request. |
 | `email_events` | Stores incoming email or webhook events. |
-| `draft_responses` | Stores generated responses awaiting review. |
+| `draft_responses` | Stores generated responses awaiting review and review decision metadata. |
+
+Remaining:
+
+- Add Alembic migrations before schema changes become larger
+- Add stronger status transition constraints
+- Add user/reviewer identity tracking
+- Add draft lifecycle audit records
 
 ---
 
-### Phase 7: RAG and Semantic Search Improvements
+### Phase 8: RAG and Semantic Search Improvements
 
 Goal: improve retrieval quality beyond keyword matching.
 
@@ -236,7 +306,7 @@ Current implementation uses keyword-based retrieval because it is transparent, e
 
 ---
 
-### Phase 8: Safety-Sensitive Request Handling
+### Phase 9: Safety-Sensitive Request Handling
 
 Goal: avoid treating crisis, self-harm, or emergency messages as normal HR requests.
 
@@ -253,7 +323,7 @@ This phase should be handled carefully and separately from standard HR policy au
 
 ---
 
-### Phase 9: Production Readiness Improvements
+### Phase 10: Production Readiness Improvements
 
 Goal: improve deployment, maintainability, and operational quality.
 
@@ -270,45 +340,46 @@ Planned improvements:
 - CI workflow for tests
 - Improved test database isolation
 - Basic observability and health diagnostics
-- Add PII and sensitive-data redaction before LLM calls
+- PII and sensitive-data redaction before LLM calls
+- Authentication and role-based authorization
+- Secure handling of raw email/webhook content
+- Retention policy for sensitive HR data
 
 Expected outcome:
 
 - The project becomes easier to deploy, test, and extend in a realistic engineering environment.
 
-### Date-Sensitive Leave Handling
-
-Goal: avoid relying on the LLM for calendar arithmetic and leave notice validation.
-
-Completed:
-
-- Added timezone configuration through `APP_TIMEZONE`
-- Added timezone-aware datetime context
-- Added deterministic leave date fact extraction
-- Supported common relative date phrases such as `next Monday`, `tomorrow`, and `a week after next Monday`
-- Added leave duration extraction for phrases like `for 2 days`
-- Calculated latest standard submission date using backend logic
-- Calculated notice status as `missed`, `deadline_today`, `not_missed`, or `unknown`
-- Passed resolved leave date facts to the Leave Agent
-- Added tests for leave date resolution edge cases
-
-Remaining:
-
-- Support more natural date expressions
-- Support public holidays/weekends if HR policy requires business-day calculations
-- Add richer date parser or controlled date extraction layer if needed
 ---
 
+## Future Privacy Hardening: PII Redaction Before LLM Calls
+
+Planned feature:
+
+- Add a PII redaction layer before sending user messages, email bodies, or document excerpts to the LLM
+- Redact or pseudonymize sensitive fields such as names, emails, phone numbers, employee IDs, addresses, salary details, and medical information
+- Keep raw events stored securely while sending only sanitized prompt content to the LLM
+- Avoid storing raw sensitive prompts in audit logs
+- Store redacted summaries and trace metadata for debugging and review
+- Consider hashing stable identifiers for internal matching where appropriate
+- Keep human review for sensitive HR cases such as harassment, medical leave, disciplinary concerns, and payroll issues
+
+Reason:
+
+HR systems process sensitive employee information. Even if the LLM is self-hosted or enterprise-hosted, the platform should minimize unnecessary exposure of personal data and avoid leaking sensitive information through prompts, logs, or audit records.
+
+---
 
 ## Design Principles
 
 - API-first backend design
 - Controlled HR document knowledge base
-- Human-in-the-loop for HR decisions
+- Risk-based Human-in-the-Loop review instead of mandatory review for every case
 - No automatic sending of sensitive HR responses initially
 - Transparent audit trail
 - Traceable document-grounded responses
-- Clear separation between orchestration, agents, memory, documents, retrieval, and persistence
+- Deterministic code for business-critical calculations such as leave dates and notice deadlines
+- LLMs used for language generation, classification support, and policy-grounded explanations rather than final business-rule authority
+- Clear separation between orchestration, agents, memory, documents, retrieval, review decisions, drafts, and persistence
 - Safe fallback behavior for LLM failures
 - Avoid exposing sensitive credentials or raw internal errors
 - Build incrementally, with working checkpoints after each phase
@@ -317,18 +388,19 @@ Remaining:
 
 ## Immediate Next Step
 
-The next implementation step should be **Phase 4: Email/Webhook Intake**.
+The next recommended implementation step is **draft lifecycle audit logging**.
+
+Rationale:
+
+The system now supports draft creation, editing, approval, and rejection. These are important Human-in-the-Loop control actions, so they should be traceable.
 
 Recommended first code changes:
 
-1. Add `EmailEvent` SQLAlchemy model.
-2. Add corresponding Pydantic schemas.
-3. Add `EmailEventService`.
-4. Add `/webhooks/email` endpoint for generic email-like payloads.
-5. Convert incoming webhook payloads into persistent HR requests.
-6. Run the existing LangGraph workflow for webhook-created requests.
-7. Store generated response as a draft rather than sending anything automatically.
-8. Add tests for webhook intake and request creation.
+1. Add audit log entries when a draft is created.
+2. Add audit log entries when a draft body is updated.
+3. Add audit log entries when a draft is approved.
+4. Add audit log entries when a draft is rejected.
+5. Include `draft_id`, `request_id`, draft status, and review metadata in audit details.
+6. Add tests for draft lifecycle audit events.
 
-This should be implemented before Gmail or n8n integration so that the backend remains testable without external OAuth or automation dependencies.
-
+This should be implemented before email sending, because sending an approved draft is a higher-risk workflow and should depend on reliable auditability.
