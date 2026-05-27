@@ -11,7 +11,6 @@ os.environ["DATABASE_URL"] = f"sqlite:///./{TEST_DATABASE_PATH}"
 from app.database import Base, SessionLocal, engine, get_db  # noqa: E402
 from app.main import app  # noqa: E402
 
-print("TEST DATABASE URL:", engine.url)
 def override_get_db():
     """Provide test database sessions to FastAPI routes."""
     db = SessionLocal()
