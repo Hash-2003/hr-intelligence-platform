@@ -1,3 +1,6 @@
+import json
+from uuid import uuid4
+
 from fastapi.testclient import TestClient
 
 from app.database import create_db_tables
@@ -7,7 +10,7 @@ from pathlib import Path
 from datetime import date
 
 from app.services.leave_date_service import LeaveDateService
-from app.services.review_decision_service import ReviewDecisionService
+from app.services.review_decision_service import ReviewDecisionService, ReviewDecision
 
 
 create_db_tables()
@@ -997,3 +1000,316 @@ def test_llm_invalid_json_falls_back_to_review_required():
     assert decision.review_required is True
     assert decision.priority == "medium"
     assert decision.decision_source == "deterministic_fallback"
+
+
+def test_create_generic_audit_event():
+    from app.database import SessionLocal
+    from app.services.audit_service import AuditService
+
+    db = SessionLocal()
+
+    try:
+        service = AuditService(db)
+
+        log = service.create_event(
+            event_type="draft_created",
+            resource_type="draft_response",
+            resource_id="draft-123",
+            request_id="request-123",
+            user_id="employee@example.com",
+            details={
+                "draft_id": "draft-123",
+                "draft_status": "draft",
+                "review_action": "review_optional",
+            },
+        )
+
+        assert log.id is not None
+        assert log.event_type == "draft_created"
+        assert log.resource_type == "draft_response"
+        assert log.resource_id == "draft-123"
+        assert log.request_id == "request-123"
+        assert log.user_id == "employee@example.com"
+        assert log.message == "Audit event: draft_created"
+        assert log.status == "success"
+
+        details = json.loads(log.details_json)
+
+        assert details["draft_id"] == "draft-123"
+        assert details["draft_status"] == "draft"
+        assert details["review_action"] == "review_optional"
+
+    finally:
+        db.close()
+
+
+def test_create_request_level_audit_log_sets_default_event_metadata():
+    from app.database import SessionLocal
+    from app.services.audit_service import AuditService
+
+    db = SessionLocal()
+
+    try:
+        service = AuditService(db)
+
+        log = service.create_log(
+            request_id="request-456",
+            user_id="user-456",
+            message="Test request message",
+            classified_intent="leave",
+            confidence=0.95,
+            selected_agent="leave_agent",
+            response_summary="Test response summary",
+            status="success",
+        )
+
+        assert log.id is not None
+        assert log.event_type == "request_processed"
+        assert log.resource_type == "hr_request"
+        assert log.resource_id == "request-456"
+        assert log.request_id == "request-456"
+        assert log.classified_intent == "leave"
+        assert log.selected_agent == "leave_agent"
+
+    finally:
+        db.close()
+
+
+def _create_test_hr_request_for_draft_audit(db) -> str:
+    from app.services.hr_request_service import HRRequestService
+
+    request_id = str(uuid4())
+    service = HRRequestService(db)
+
+    service.create_request(
+        request_id=request_id,
+        user_id="employee@example.com",
+        message="I want annual leave next Monday.",
+        source_type="api",
+        subject="Annual leave request",
+    )
+
+    return request_id
+
+
+def _test_review_decision_for_draft_audit() -> ReviewDecision:
+    return ReviewDecision(
+        action="review_optional",
+        review_required=False,
+        priority="medium",
+        reason="Leave request detected; draft may be reviewed before action.",
+        decision_source="deterministic",
+    )
+
+
+def test_create_draft_writes_draft_created_audit_event():
+    from app.database import SessionLocal
+    from app.services.draft_response_service import DraftResponseService
+
+    db = SessionLocal()
+
+    try:
+        request_id = _create_test_hr_request_for_draft_audit(db)
+        service = DraftResponseService(db)
+
+        draft = service.create_draft(
+            request_id=request_id,
+            body="Generated draft body.",
+            review_decision=_test_review_decision_for_draft_audit(),
+            email_event_id=None,
+            recipient_email="employee@example.com",
+            subject="Re: Annual leave request",
+        )
+
+        audit_logs = service.audit_service.get_logs(
+            user_id="employee@example.com",
+            limit=20,
+        )
+
+        draft_created_logs = [
+            log for log in audit_logs
+            if log.event_type == "draft_created"
+            and log.resource_id == draft.draft_id
+        ]
+
+        assert len(draft_created_logs) == 1
+
+        log = draft_created_logs[0]
+
+        assert log.resource_type == "draft_response"
+        assert log.resource_id == draft.draft_id
+        assert log.request_id == request_id
+
+        details = json.loads(log.details_json)
+
+        assert details["draft_id"] == draft.draft_id
+        assert details["request_id"] == request_id
+        assert details["draft_status"] == "draft"
+        assert details["review_action"] == "review_optional"
+        assert details["review_required"] is False
+        assert details["review_priority"] == "medium"
+        assert details["review_decision_source"] == "deterministic"
+
+    finally:
+        db.close()
+
+
+def test_update_draft_writes_draft_updated_audit_event():
+    from app.database import SessionLocal
+    from app.services.draft_response_service import DraftResponseService
+
+    db = SessionLocal()
+
+    try:
+        request_id = _create_test_hr_request_for_draft_audit(db)
+        service = DraftResponseService(db)
+
+        draft = service.create_draft(
+            request_id=request_id,
+            body="Original draft body.",
+            review_decision=_test_review_decision_for_draft_audit(),
+            recipient_email="employee@example.com",
+            subject="Re: Annual leave request",
+        )
+
+        updated = service.update_draft_body(
+            draft_id=draft.draft_id,
+            body="Updated draft body.",
+        )
+
+        assert updated is not None
+        assert updated.body == "Updated draft body."
+
+        audit_logs = service.audit_service.get_logs(
+            user_id="employee@example.com",
+            limit=20,
+        )
+
+        assert any(
+            log.event_type == "draft_updated"
+            and log.resource_id == draft.draft_id
+            for log in audit_logs
+        )
+
+    finally:
+        db.close()
+
+
+def test_approve_draft_writes_draft_approved_audit_event():
+    from app.database import SessionLocal
+    from app.services.draft_response_service import DraftResponseService
+
+    db = SessionLocal()
+
+    try:
+        request_id = _create_test_hr_request_for_draft_audit(db)
+        service = DraftResponseService(db)
+
+        draft = service.create_draft(
+            request_id=request_id,
+            body="Draft body.",
+            review_decision=_test_review_decision_for_draft_audit(),
+            recipient_email="employee@example.com",
+            subject="Re: Annual leave request",
+        )
+
+        approved = service.approve_draft(draft.draft_id)
+
+        assert approved is not None
+        assert approved.status == "approved"
+
+        audit_logs = service.audit_service.get_logs(
+            user_id="employee@example.com",
+            limit=20,
+        )
+
+        approved_logs = [
+            log for log in audit_logs
+            if log.event_type == "draft_approved"
+            and log.resource_id == draft.draft_id
+        ]
+
+        assert len(approved_logs) == 1
+
+        details = json.loads(approved_logs[0].details_json)
+
+        assert details["draft_status"] == "approved"
+
+    finally:
+        db.close()
+
+
+def test_reject_draft_writes_draft_rejected_audit_event():
+    from app.database import SessionLocal
+    from app.services.draft_response_service import DraftResponseService
+
+    db = SessionLocal()
+
+    try:
+        request_id = _create_test_hr_request_for_draft_audit(db)
+        service = DraftResponseService(db)
+
+        draft = service.create_draft(
+            request_id=request_id,
+            body="Draft body.",
+            review_decision=_test_review_decision_for_draft_audit(),
+            recipient_email="employee@example.com",
+            subject="Re: Annual leave request",
+        )
+
+        rejected = service.reject_draft(draft.draft_id)
+
+        assert rejected is not None
+        assert rejected.status == "rejected"
+
+        audit_logs = service.audit_service.get_logs(
+            user_id="employee@example.com",
+            limit=20,
+        )
+
+        rejected_logs = [
+            log for log in audit_logs
+            if log.event_type == "draft_rejected"
+            and log.resource_id == draft.draft_id
+        ]
+
+        assert len(rejected_logs) == 1
+
+        details = json.loads(rejected_logs[0].details_json)
+
+        assert details["draft_status"] == "rejected"
+
+    finally:
+        db.close()
+
+
+def test_approved_draft_cannot_be_updated():
+    from app.database import SessionLocal
+    from app.services.draft_response_service import DraftResponseService
+
+    db = SessionLocal()
+
+    try:
+        request_id = _create_test_hr_request_for_draft_audit(db)
+        service = DraftResponseService(db)
+
+        draft = service.create_draft(
+            request_id=request_id,
+            body="Draft body.",
+            review_decision=_test_review_decision_for_draft_audit(),
+            recipient_email="employee@example.com",
+            subject="Re: Annual leave request",
+        )
+
+        service.approve_draft(draft.draft_id)
+
+        updated = service.update_draft_body(
+            draft_id=draft.draft_id,
+            body="Should not update.",
+        )
+
+        assert updated is None
+
+    finally:
+        db.close()
+
