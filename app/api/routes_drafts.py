@@ -94,3 +94,20 @@ def reject_draft(
         raise HTTPException(status_code=404, detail="Draft response not found.")
 
     return DraftResponseOut.model_validate(draft)
+
+@router.post("/{draft_id}/send", response_model=DraftResponseOut)
+def send_draft(
+    draft_id: str,
+    db: Session = Depends(get_db),
+) -> DraftResponseOut:
+    """Simulate sending an approved draft response."""
+    service = DraftResponseService(db)
+    draft = service.send_draft(draft_id)
+
+    if draft is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Draft response not found or cannot be sent.",
+        )
+
+    return DraftResponseOut.model_validate(draft)

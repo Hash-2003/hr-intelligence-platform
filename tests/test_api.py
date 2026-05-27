@@ -1312,3 +1312,136 @@ def test_approved_draft_cannot_be_updated():
     finally:
         db.close()
 
+def test_send_approved_draft_marks_as_sent_and_writes_audit_event():
+    from app.database import SessionLocal
+    from app.services.draft_response_service import DraftResponseService
+
+    db = SessionLocal()
+
+    try:
+        request_id = _create_test_hr_request_for_draft_audit(db)
+        service = DraftResponseService(db)
+
+        draft = service.create_draft(
+            request_id=request_id,
+            body="Draft body.",
+            review_decision=_test_review_decision_for_draft_audit(),
+            recipient_email="employee@example.com",
+            subject="Re: Annual leave request",
+        )
+
+        approved = service.approve_draft(draft.draft_id)
+
+        assert approved is not None
+        assert approved.status == "approved"
+
+        sent = service.send_draft(draft.draft_id)
+
+        assert sent is not None
+        assert sent.status == "sent"
+
+        audit_logs = service.audit_service.get_logs(
+            user_id="employee@example.com",
+            limit=30,
+        )
+
+        sent_logs = [
+            log for log in audit_logs
+            if log.event_type == "draft_sent"
+            and log.resource_id == draft.draft_id
+        ]
+
+        assert len(sent_logs) == 1
+
+        details = json.loads(sent_logs[0].details_json)
+
+        assert details["draft_status"] == "sent"
+        assert details["draft_id"] == draft.draft_id
+
+    finally:
+        db.close()
+
+def test_unapproved_draft_cannot_be_sent():
+    from app.database import SessionLocal
+    from app.services.draft_response_service import DraftResponseService
+
+    db = SessionLocal()
+
+    try:
+        request_id = _create_test_hr_request_for_draft_audit(db)
+        service = DraftResponseService(db)
+
+        draft = service.create_draft(
+            request_id=request_id,
+            body="Draft body.",
+            review_decision=_test_review_decision_for_draft_audit(),
+            recipient_email="employee@example.com",
+            subject="Re: Annual leave request",
+        )
+
+        sent = service.send_draft(draft.draft_id)
+
+        assert sent is None
+
+    finally:
+        db.close()
+
+def test_send_draft_endpoint_sends_approved_draft():
+    from app.database import SessionLocal
+    from app.services.draft_response_service import DraftResponseService
+
+    db = SessionLocal()
+
+    try:
+        request_id = _create_test_hr_request_for_draft_audit(db)
+        service = DraftResponseService(db)
+
+        draft = service.create_draft(
+            request_id=request_id,
+            body="Draft body.",
+            review_decision=_test_review_decision_for_draft_audit(),
+            recipient_email="employee@example.com",
+            subject="Re: Annual leave request",
+        )
+
+        approve_response = client.post(f"/drafts/{draft.draft_id}/approve")
+
+        assert approve_response.status_code == 200
+        assert approve_response.json()["status"] == "approved"
+
+        send_response = client.post(f"/drafts/{draft.draft_id}/send")
+
+        assert send_response.status_code == 200
+        data = send_response.json()
+
+        assert data["draft_id"] == draft.draft_id
+        assert data["status"] == "sent"
+
+    finally:
+        db.close()
+
+def test_send_draft_endpoint_rejects_unapproved_draft():
+    from app.database import SessionLocal
+    from app.services.draft_response_service import DraftResponseService
+
+    db = SessionLocal()
+
+    try:
+        request_id = _create_test_hr_request_for_draft_audit(db)
+        service = DraftResponseService(db)
+
+        draft = service.create_draft(
+            request_id=request_id,
+            body="Draft body.",
+            review_decision=_test_review_decision_for_draft_audit(),
+            recipient_email="employee@example.com",
+            subject="Re: Annual leave request",
+        )
+
+        response = client.post(f"/drafts/{draft.draft_id}/send")
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Draft response not found or cannot be sent."
+
+    finally:
+        db.close()

@@ -145,6 +145,29 @@ class DraftResponseService:
 
         return draft
 
+    def send_draft(self, draft_id: str) -> DraftResponse | None:
+        """Simulate sending an approved draft response."""
+        draft = self.get_draft_by_id(draft_id)
+
+        if draft is None:
+            return None
+
+        if draft.status != "approved":
+            return None
+
+        draft.status = "sent"
+        draft.updated_at = datetime.now(timezone.utc)
+
+        self.db.commit()
+        self.db.refresh(draft)
+
+        self._create_draft_audit_event(
+            event_type="draft_sent",
+            draft=draft,
+        )
+
+        return draft
+
     def _create_draft_audit_event(
         self,
         event_type: str,
