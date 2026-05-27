@@ -8,3 +8,5 @@ hr_intelligence_platform.db
 *.sqlite3
 .idea/
 .vscode/
+test_hr_intelligence_platform.db
+*.db

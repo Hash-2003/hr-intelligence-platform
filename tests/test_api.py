@@ -13,7 +13,6 @@ from app.services.leave_date_service import LeaveDateService
 from app.services.review_decision_service import ReviewDecisionService, ReviewDecision
 
 
-create_db_tables()
 client = TestClient(app)
 
 
