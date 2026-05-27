@@ -7,6 +7,7 @@ from app.schemas.webhook_schema import EmailWebhookRequest, EmailWebhookResponse
 from app.services.email_event_service import EmailEventService
 from app.services.draft_response_service import DraftResponseService
 from app.services.review_decision_service import ReviewDecisionService
+from app.services.email_draft_formatter import EmailDraftFormatter
 router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
 
 
@@ -61,7 +62,10 @@ def process_email_webhook(
         email_event_id=event.event_id,
         recipient_email=str(payload.sender_email),
         subject=f"Re: {payload.subject}",
-        body=result.get("response", ""),
+        body=EmailDraftFormatter.format_reply_body(
+            recipient_name=payload.sender_name,
+            response_body=result.get("response", ""),
+        ),
         review_decision=review_decision,
     )
 
