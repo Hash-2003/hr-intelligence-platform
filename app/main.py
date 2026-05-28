@@ -13,6 +13,7 @@ from app.api.routes_webhooks import router as webhooks_router
 from app.api.routes_drafts import router as drafts_router
 from app.config import get_settings
 from app.database import create_db_tables
+from app.api.routes_email_events import router as email_events_router
 
 
 @asynccontextmanager
@@ -39,6 +40,7 @@ app.include_router(hr_requests_router)
 app.include_router(documents_router)
 app.include_router(webhooks_router)
 app.include_router(drafts_router)
+app.include_router(email_events_router)
 
 
 @app.get("/")
@@ -55,4 +57,5 @@ def root() -> dict:
         "documents": "/documents",
         "webhooks": "/webhooks/email",
         "drafts": "/drafts",
+        "email_events": "/email-events",
     }

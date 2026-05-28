@@ -28,3 +28,23 @@ class EmailWebhookResponse(BaseModel):
     review_priority: str
     review_reason: str
     review_decision_source: str
+
+
+class EmailEventOut(BaseModel):
+    """Stored email event returned through the API."""
+
+    id: int
+    event_id: str
+    sender_email: str
+    sender_name: str | None
+    subject: str
+    body: str
+    received_at: datetime | None
+    source: str
+    linked_request_id: str | None
+    status: str
+    created_at: datetime
+
+    model_config = {
+        "from_attributes": True
+    }
