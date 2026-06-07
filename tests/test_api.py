@@ -1445,3 +1445,205 @@ def test_send_draft_endpoint_rejects_unapproved_draft():
 
     finally:
         db.close()
+
+def test_get_drafts_filters_by_status():
+    from app.database import SessionLocal
+    from app.services.draft_response_service import DraftResponseService
+
+    db = SessionLocal()
+
+    try:
+        request_id = _create_test_hr_request_for_draft_audit(db)
+        service = DraftResponseService(db)
+
+        draft = service.create_draft(
+            request_id=request_id,
+            body="Draft body.",
+            review_decision=_test_review_decision_for_draft_audit(),
+            recipient_email="employee@example.com",
+            subject="Re: Annual leave request",
+        )
+
+        service.approve_draft(draft.draft_id)
+
+        response = client.get("/drafts?status=approved")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert any(
+            item["draft_id"] == draft.draft_id
+            and item["status"] == "approved"
+            for item in data
+        )
+
+    finally:
+        db.close()
+
+def test_get_drafts_filters_by_review_priority():
+    from app.database import SessionLocal
+    from app.services.draft_response_service import DraftResponseService
+    from app.services.review_decision_service import ReviewDecision
+
+    db = SessionLocal()
+
+    try:
+        request_id = _create_test_hr_request_for_draft_audit(db)
+        service = DraftResponseService(db)
+
+        high_priority_decision = ReviewDecision(
+            action="review_required",
+            review_required=True,
+            priority="high",
+            reason="Sensitive HR topic detected.",
+            decision_source="deterministic",
+        )
+
+        draft = service.create_draft(
+            request_id=request_id,
+            body="High priority draft body.",
+            review_decision=high_priority_decision,
+            recipient_email="employee@example.com",
+            subject="Re: Sensitive HR request",
+        )
+
+        response = client.get("/drafts?review_priority=high")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert any(
+            item["draft_id"] == draft.draft_id
+            and item["review_priority"] == "high"
+            for item in data
+        )
+
+    finally:
+        db.close()
+
+def test_get_drafts_filters_by_review_action():
+    from app.database import SessionLocal
+    from app.services.draft_response_service import DraftResponseService
+    from app.services.review_decision_service import ReviewDecision
+
+    db = SessionLocal()
+
+    try:
+        request_id = _create_test_hr_request_for_draft_audit(db)
+        service = DraftResponseService(db)
+
+        review_required_decision = ReviewDecision(
+            action="review_required",
+            review_required=True,
+            priority="high",
+            reason="Sensitive workplace concern detected.",
+            decision_source="deterministic",
+        )
+
+        draft = service.create_draft(
+            request_id=request_id,
+            body="Review required draft body.",
+            review_decision=review_required_decision,
+            recipient_email="employee@example.com",
+            subject="Re: HR concern",
+        )
+
+        response = client.get("/drafts?review_action=review_required")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert any(
+            item["draft_id"] == draft.draft_id
+            and item["review_action"] == "review_required"
+            for item in data
+        )
+
+    finally:
+        db.close()
+
+def test_get_drafts_filters_by_recipient_email():
+    from app.database import SessionLocal
+    from app.services.draft_response_service import DraftResponseService
+
+    db = SessionLocal()
+
+    try:
+        request_id = _create_test_hr_request_for_draft_audit(db)
+        service = DraftResponseService(db)
+
+        draft = service.create_draft(
+            request_id=request_id,
+            body="Draft body for recipient filter.",
+            review_decision=_test_review_decision_for_draft_audit(),
+            recipient_email="specific.employee@example.com",
+            subject="Re: Annual leave request",
+        )
+
+        response = client.get(
+            "/drafts?recipient_email=specific.employee@example.com"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert any(
+            item["draft_id"] == draft.draft_id
+            and item["recipient_email"] == "specific.employee@example.com"
+            for item in data
+        )
+
+    finally:
+        db.close()
+
+def test_get_drafts_supports_combined_filters():
+    from app.database import SessionLocal
+    from app.services.draft_response_service import DraftResponseService
+    from app.services.review_decision_service import ReviewDecision
+
+    db = SessionLocal()
+
+    try:
+        request_id = _create_test_hr_request_for_draft_audit(db)
+        service = DraftResponseService(db)
+
+        review_required_decision = ReviewDecision(
+            action="review_required",
+            review_required=True,
+            priority="high",
+            reason="Sensitive HR topic detected.",
+            decision_source="deterministic",
+        )
+
+        draft = service.create_draft(
+            request_id=request_id,
+            body="Combined filter draft body.",
+            review_decision=review_required_decision,
+            recipient_email="combined.employee@example.com",
+            subject="Re: HR concern",
+        )
+
+        response = client.get(
+            "/drafts"
+            "?status=draft"
+            "&review_required=true"
+            "&review_priority=high"
+            "&review_action=review_required"
+            "&recipient_email=combined.employee@example.com"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert any(
+            item["draft_id"] == draft.draft_id
+            and item["status"] == "draft"
+            and item["review_required"] is True
+            and item["review_priority"] == "high"
+            and item["review_action"] == "review_required"
+            and item["recipient_email"] == "combined.employee@example.com"
+            for item in data
+        )
+
+    finally:
+        db.close()

@@ -12,14 +12,20 @@ router = APIRouter(prefix="/drafts", tags=["Draft Responses"])
 def get_drafts(
     status: str | None = None,
     review_required: bool | None = None,
+    review_priority: str | None = None,
+    review_action: str | None = None,
+    recipient_email: str | None = None,
     limit: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
 ) -> list[DraftResponseOut]:
-    """Retrieve draft responses."""
+    """Retrieve draft responses, optionally filtered for review queues."""
     service = DraftResponseService(db)
     drafts = service.get_drafts(
         status=status,
         review_required=review_required,
+        review_priority=review_priority,
+        review_action=review_action,
+        recipient_email=recipient_email,
         limit=limit,
     )
 

@@ -54,12 +54,15 @@ class DraftResponseService:
         return draft
 
     def get_drafts(
-        self,
-        status: str | None = None,
-        review_required: bool | None = None,
-        limit: int = 50,
+            self,
+            status: str | None = None,
+            review_required: bool | None = None,
+            review_priority: str | None = None,
+            review_action: str | None = None,
+            recipient_email: str | None = None,
+            limit: int = 50,
     ) -> list[DraftResponse]:
-        """Retrieve draft responses, optionally filtered."""
+        """Retrieve draft responses, optionally filtered for review queues."""
         query = self.db.query(DraftResponse)
 
         if status:
@@ -67,6 +70,15 @@ class DraftResponseService:
 
         if review_required is not None:
             query = query.filter(DraftResponse.review_required == review_required)
+
+        if review_priority:
+            query = query.filter(DraftResponse.review_priority == review_priority)
+
+        if review_action:
+            query = query.filter(DraftResponse.review_action == review_action)
+
+        if recipient_email:
+            query = query.filter(DraftResponse.recipient_email == recipient_email)
 
         return cast(
             list[DraftResponse],
