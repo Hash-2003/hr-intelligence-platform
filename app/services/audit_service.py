@@ -82,14 +82,34 @@ class AuditService:
         return log
 
     def get_logs(
-        self,
-        user_id: str | None = None,
-        limit: int = 50,
+            self,
+            user_id: str | None = None,
+            request_id: str | None = None,
+            event_type: str | None = None,
+            resource_type: str | None = None,
+            resource_id: str | None = None,
+            status: str | None = None,
+            limit: int = 50,
     ) -> list[AuditLog]:
-        """Retrieve audit logs, optionally filtered by user."""
+        """Retrieve audit logs, optionally filtered."""
         query = self.db.query(AuditLog)
 
         if user_id:
             query = query.filter(AuditLog.user_id == user_id)
+
+        if request_id:
+            query = query.filter(AuditLog.request_id == request_id)
+
+        if event_type:
+            query = query.filter(AuditLog.event_type == event_type)
+
+        if resource_type:
+            query = query.filter(AuditLog.resource_type == resource_type)
+
+        if resource_id:
+            query = query.filter(AuditLog.resource_id == resource_id)
+
+        if status:
+            query = query.filter(AuditLog.status == status)
 
         return query.order_by(desc(AuditLog.created_at)).limit(limit).all()

@@ -3,7 +3,6 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
-from app.database import create_db_tables
 from app.main import app
 
 from pathlib import Path
@@ -1644,6 +1643,177 @@ def test_get_drafts_supports_combined_filters():
             and item["recipient_email"] == "combined.employee@example.com"
             for item in data
         )
+
+    finally:
+        db.close()
+
+def test_audit_logs_filter_by_event_type():
+    from app.database import SessionLocal
+    from app.services.audit_service import AuditService
+
+    db = SessionLocal()
+
+    try:
+        service = AuditService(db)
+
+        matching = service.create_event(
+            event_type="draft_sent",
+            resource_type="draft_response",
+            resource_id="draft-filter-event-type",
+            request_id="request-filter-event-type",
+            user_id="audit-filter@example.com",
+            details={"test": "event_type"},
+        )
+
+        service.create_event(
+            event_type="draft_created",
+            resource_type="draft_response",
+            resource_id="draft-other-event-type",
+            request_id="request-other-event-type",
+            user_id="audit-filter@example.com",
+            details={"test": "other"},
+        )
+
+        response = client.get("/audit?event_type=draft_sent")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert any(item["id"] == matching.id for item in data)
+        assert all(item["event_type"] == "draft_sent" for item in data)
+
+    finally:
+        db.close()
+
+def test_audit_logs_filter_by_resource_type():
+    from app.database import SessionLocal
+    from app.services.audit_service import AuditService
+
+    db = SessionLocal()
+
+    try:
+        service = AuditService(db)
+
+        matching = service.create_event(
+            event_type="draft_approved",
+            resource_type="draft_response",
+            resource_id="draft-filter-resource-type",
+            request_id="request-filter-resource-type",
+            user_id="audit-resource@example.com",
+            details={"test": "resource_type"},
+        )
+
+        service.create_event(
+            event_type="request_processed",
+            resource_type="hr_request",
+            resource_id="request-other-resource-type",
+            request_id="request-other-resource-type",
+            user_id="audit-resource@example.com",
+            details={"test": "other"},
+        )
+
+        response = client.get("/audit?resource_type=draft_response")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert any(item["id"] == matching.id for item in data)
+        assert all(item["resource_type"] == "draft_response" for item in data)
+
+    finally:
+        db.close()
+
+def test_audit_logs_filter_by_resource_id():
+    from app.database import SessionLocal
+    from app.services.audit_service import AuditService
+
+    db = SessionLocal()
+
+    try:
+        service = AuditService(db)
+
+        matching = service.create_event(
+            event_type="draft_sent",
+            resource_type="draft_response",
+            resource_id="specific-draft-resource-id",
+            request_id="request-specific-resource-id",
+            user_id="audit-resource-id@example.com",
+            details={"test": "resource_id"},
+        )
+
+        service.create_event(
+            event_type="draft_sent",
+            resource_type="draft_response",
+            resource_id="different-draft-resource-id",
+            request_id="request-different-resource-id",
+            user_id="audit-resource-id@example.com",
+            details={"test": "other"},
+        )
+
+        response = client.get("/audit?resource_id=specific-draft-resource-id")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert len(data) >= 1
+        assert any(item["id"] == matching.id for item in data)
+        assert all(item["resource_id"] == "specific-draft-resource-id" for item in data)
+
+    finally:
+        db.close()
+
+def test_audit_logs_support_combined_filters():
+    from app.database import SessionLocal
+    from app.services.audit_service import AuditService
+
+    db = SessionLocal()
+
+    try:
+        service = AuditService(db)
+
+        matching = service.create_event(
+            event_type="draft_approved",
+            resource_type="draft_response",
+            resource_id="combined-draft-id",
+            request_id="combined-request-id",
+            user_id="combined-audit@example.com",
+            details={"test": "combined"},
+            status="success",
+        )
+
+        service.create_event(
+            event_type="draft_approved",
+            resource_type="draft_response",
+            resource_id="other-combined-draft-id",
+            request_id="other-combined-request-id",
+            user_id="combined-audit@example.com",
+            details={"test": "other"},
+            status="success",
+        )
+
+        response = client.get(
+            "/audit"
+            "?event_type=draft_approved"
+            "&resource_type=draft_response"
+            "&resource_id=combined-draft-id"
+            "&request_id=combined-request-id"
+            "&user_id=combined-audit@example.com"
+            "&status=success"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert len(data) >= 1
+        assert any(item["id"] == matching.id for item in data)
+
+        for item in data:
+            assert item["event_type"] == "draft_approved"
+            assert item["resource_type"] == "draft_response"
+            assert item["resource_id"] == "combined-draft-id"
+            assert item["request_id"] == "combined-request-id"
+            assert item["user_id"] == "combined-audit@example.com"
+            assert item["status"] == "success"
 
     finally:
         db.close()
