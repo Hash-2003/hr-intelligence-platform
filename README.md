@@ -35,6 +35,14 @@ The project started as a technical challenge implementation and is now being ext
 - Risk-based Human-in-the-Loop review metadata
 - Rule-based and optional LLM-assisted review decision layer
 - Draft approval and rejection workflow
+- Isolated test database configuration
+- Pagination metadata for main operational list endpoints
+- Generic audit event metadata for system lifecycle events
+- Audit event filtering for operational traceability
+- Draft queue filtering for HR review workflows
+- Draft send simulation after approval
+- Email-formatted draft responses using a dedicated formatter
+- Email event retrieval and filtering endpoints
 - Append-only audit logging
 - Safe failure handling without exposing raw Python stack traces
 - SQLite database
@@ -48,8 +56,8 @@ The project started as a technical challenge implementation and is now being ext
 - Embedding-based semantic retrieval
 - Safety Agent for crisis-sensitive or non-HR emergency messages
 - PII and sensitive-data redaction before LLM calls
-- Richer email event retrieval and retry/failure tracking
-- Real email integration through n8n, Gmail, or a mail parser
+- Retry/failure tracking for webhook processing
+- Real email integration through n8n, Gmail, Microsoft Graph, or a mail parser
 - Docker support
 - PostgreSQL and migration support
 - CI workflow
@@ -98,7 +106,11 @@ Update HR request status and result
     ↓
 Apply risk-based review decision logic
     ↓
-Create reviewable draft response, for webhook requests
+Create formatted reviewable email draft, for webhook requests
+    ↓
+Human review: edit, approve, reject, or send simulation
+    ↓
+Write generic audit events for draft lifecycle actions
     ↓
 Save short-term memory
     ↓
@@ -136,11 +148,48 @@ clarification
 | GET | `/hr-requests/{request_id}/agent-runs` | Retrieve agent execution records for a request |
 | GET | `/hr-requests/{request_id}/policy-sources` | Retrieve policy document chunks used by a request |
 | POST | `/webhooks/email` | Process an incoming email-like HR request webhook |
+| GET | `/email-events` | Retrieve stored email/webhook events with filters and pagination metadata |
+| GET | `/email-events/{event_id}` | Retrieve a specific stored email/webhook event |
 | GET | `/drafts` | Retrieve generated draft responses |
 | GET | `/drafts/{draft_id}` | Retrieve a specific draft response |
 | PATCH | `/drafts/{draft_id}` | Update the body of an editable draft response |
 | POST | `/drafts/{draft_id}/approve` | Mark a draft response as approved |
 | POST | `/drafts/{draft_id}/reject` | Mark a draft response as rejected |
+| POST | `/drafts/{draft_id}/send` | Simulate sending an approved draft response |
+
+
+## Paginated Operational List Responses
+
+Main operational list endpoints return pagination metadata using a consistent response shape.
+
+Paginated endpoints currently include:
+
+```text
+GET /drafts
+GET /audit
+GET /email-events
+GET /hr-requests
+```
+
+Response shape:
+
+```json
+{
+  "items": [],
+  "total": 0,
+  "limit": 50,
+  "offset": 0
+}
+```
+
+Common query parameters:
+
+```http
+GET /drafts?limit=20&offset=0
+GET /audit?event_type=draft_sent&limit=20&offset=0
+GET /email-events?status=processed&limit=20&offset=0
+GET /hr-requests?intent=leave&limit=20&offset=0
+```
 
 ## Date-Aware Leave Handling
 
@@ -190,6 +239,8 @@ Generates an AI-assisted response
     ↓
 Applies review decision logic
     ↓
+Formats the agent response as an email-style draft
+    ↓
 Stores the response as a draft
 ```
 
@@ -215,11 +266,22 @@ review_decision_source
 Draft lifecycle:
 
 ```text
-draft → approved
+draft → approved → sent
 draft → rejected
 ```
 
-Approving a draft does not send an email. It only marks the response as approved for a future human-controlled workflow.
+The `sent` state is currently a simulation. It marks an approved draft as sent and records the action in the audit log, but it does not send a real email.
+
+Webhook-generated drafts are formatted as email replies:
+
+```text
+Agent response
+    ↓
+EmailDraftFormatter
+    ↓
+Reviewable email draft body
+```
+
 
 ## Risk-Based Human-in-the-Loop Review
 
@@ -449,6 +511,35 @@ Example response:
 }
 ```
 
+
+## Email Event Retrieval
+
+Incoming email-like webhook events are persisted and can be inspected through API endpoints.
+
+### Retrieve Email Events
+
+```http
+GET /email-events
+```
+
+Optional filters:
+
+```http
+GET /email-events?status=processed
+GET /email-events?sender_email=employee@example.com
+GET /email-events?source=webhook
+GET /email-events?linked_request_id={request_id}
+GET /email-events?limit=20&offset=0
+```
+
+### Retrieve One Email Event
+
+```http
+GET /email-events/{event_id}
+```
+
+This improves traceability from the original email/webhook event to the generated HR request and draft response.
+
 ### Policy-Grounded Request Example
 
 ```http
@@ -500,10 +591,16 @@ GET /memory/user_001
 GET /audit
 ```
 
-Optional filter:
+Optional filters:
 
 ```http
 GET /audit?user_id=user_001
+GET /audit?event_type=draft_sent
+GET /audit?resource_type=draft_response
+GET /audit?resource_id={draft_id}
+GET /audit?request_id={request_id}
+GET /audit?status=success
+GET /audit?limit=20&offset=0
 ```
 
 ## HR Request Retrieval
@@ -514,13 +611,17 @@ GET /audit?user_id=user_001
 GET /hr-requests
 ```
 
-Optional user filter:
+Optional filters:
 
 ```http
 GET /hr-requests?user_id=user_001
+GET /hr-requests?status=success
+GET /hr-requests?intent=leave
+GET /hr-requests?source_type=email_webhook
+GET /hr-requests?limit=20&offset=0
 ```
 
-This returns persisted HR request/case records created through the request pipeline.
+This returns paginated persisted HR request/case records created through the request pipeline.
 
 ### Retrieve One HR Request
 
@@ -578,7 +679,13 @@ Optional filters:
 
 ```http
 GET /drafts?status=draft
+GET /drafts?status=approved
+GET /drafts?status=sent
 GET /drafts?review_required=true
+GET /drafts?review_priority=high
+GET /drafts?review_action=review_required
+GET /drafts?recipient_email=employee@example.com
+GET /drafts?limit=20&offset=0
 ```
 
 ### Retrieve One Draft
@@ -627,7 +734,21 @@ This changes the draft status to:
 rejected
 ```
 
-Approval or rejection updates only the stored draft status. The system does not send an email.
+### Send Approved Draft Simulation
+
+```http
+POST /drafts/{draft_id}/send
+```
+
+Only drafts with `status = approved` can be marked as sent.
+
+This changes the draft status to:
+
+```text
+sent
+```
+
+This is a send simulation only. The system does not send a real email yet.
 
 ## Document Retrieval
 
@@ -712,7 +833,7 @@ If the score is above `LTM_SIGNIFICANCE_THRESHOLD`, the item is promoted to long
 
 The audit log is append-only.
 
-Each request records:
+Each request-level audit record includes:
 
 - request ID
 - user ID
@@ -724,6 +845,24 @@ Each request records:
 - status
 - error message, if any
 - timestamp
+
+The audit layer also supports generic audit event metadata:
+
+- `event_type`
+- `resource_type`
+- `resource_id`
+- `details_json`
+
+Examples of generic audit events include:
+
+```text
+request_processed
+draft_created
+draft_updated
+draft_approved
+draft_rejected
+draft_sent
+```
 
 The API does not provide update or delete operations for audit logs.
 
@@ -765,7 +904,7 @@ The collection includes requests for health checks, HR request handling, memory 
 - The current policy retrieval method is keyword-based rather than embedding-based.
 - Source metadata is persisted, but responses do not yet include source citations in the text.
 - No real HRIS, calendar, leave-management, payroll, legal, or email-sending system is integrated.
-- The draft approval workflow does not send emails yet.
+- Draft sending is currently simulated; no real email is sent yet.
 - The system uses controlled local policy documents rather than an admin document management interface.
 - LLM responses depend on the configured provider and model.
 - The current memory retrieval strategy is simple and deterministic.
@@ -773,7 +912,8 @@ The collection includes requests for health checks, HR request handling, memory 
 - There is no authentication or role-based access control yet.
 - Crisis-sensitive or non-HR emergency messages are not yet handled by a dedicated Safety Agent.
 - PII and sensitive-data redaction before LLM calls is planned but not yet implemented.
+- Operational list endpoints are paginated, but deeper pagination metadata may still be expanded later.
 
 ## Project Status
 
-Core backend functionality, controlled document ingestion, traceable policy context retrieval, request persistence, memory, audit logging, email-like webhook intake, deterministic leave date handling, draft response workflow, risk-based review metadata, and automated tests are implemented.
+Core backend functionality, controlled document ingestion, traceable policy context retrieval, request persistence, memory, audit logging, email-like webhook intake, deterministic leave date handling, email-formatted draft responses, draft approval/rejection/send simulation, risk-based review metadata, filterable operational queues, pagination metadata, and automated tests are implemented.

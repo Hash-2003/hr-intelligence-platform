@@ -54,6 +54,14 @@ The current system already includes:
 - Draft approval and rejection endpoints
 - Risk-based Human-in-the-Loop review metadata
 - Hybrid `ReviewDecisionService` with deterministic rules and optional LLM-assisted classification for ambiguous soft-risk cases
+- Isolated test database configuration
+- Pagination metadata for `/drafts`, `/audit`, `/email-events`, and `/hr-requests`
+- Audit event filtering
+- Draft queue filtering
+- Generic audit event metadata and draft lifecycle audit events
+- Draft approval, rejection, and send simulation endpoints
+- Email-formatted draft responses
+- Email event retrieval and filtering endpoints
 
 ---
 
@@ -76,7 +84,7 @@ Remaining:
 
 - Improve status transition model
 - Add richer request filtering
-- Add pagination metadata
+- Expand pagination metadata to secondary/nested endpoints if needed
 - Add database migrations
 
 ---
@@ -153,10 +161,12 @@ Completed:
 - Used webhook `received_at` as the reference timestamp for date-sensitive reasoning
 - Updated webhook response to include generated `draft_id` and review decision metadata
 - Added tests for webhook validation and metadata passing
+- Added email event retrieval and filtering endpoints
+- Added paginated `/email-events` responses with `{ items, total, limit, offset }`
 
 Remaining:
 
-- Add richer email event retrieval endpoints
+- Add richer retry/failure status handling for email/webhook event processing
 - Add n8n/Gmail integration guide
 - Add retry/failure status handling for webhook processing
 - Add email-source authentication/signature validation for real integrations
@@ -226,11 +236,20 @@ Completed:
   - `POST /drafts/{draft_id}/reject`
 - Updated webhook response to return `draft_id` and review decision metadata
 - Added tests for review decision behavior and draft workflow behavior
+- Added email-formatted draft response bodies through a dedicated formatter
+- Added draft send simulation after approval
+- Added generic audit events for draft lifecycle actions:
+  - `draft_created`
+  - `draft_updated`
+  - `draft_approved`
+  - `draft_rejected`
+  - `draft_sent`
+- Added draft queue filtering by status, review requirement, review priority, review action, and recipient email
+- Added paginated `/drafts` responses with `{ items, total, limit, offset }`
 
 Remaining:
 
-- Add audit events for draft approval, rejection, and edits
-- Add email sending only after approval
+- Add real email sending only after approval
 - Add authentication and role-based access control for draft review
 - Add dashboard/UI for HR reviewers
 - Add PII redaction before LLM calls
@@ -279,11 +298,71 @@ Remaining:
 - Add Alembic migrations before schema changes become larger
 - Add stronger status transition constraints
 - Add user/reviewer identity tracking
-- Add draft lifecycle audit records
+- Add stronger query/index design for growing operational tables
 
 ---
 
-### Phase 8: RAG and Semantic Search Improvements
+### Phase 8: Operational Review, Filtering, and Pagination
+
+Goal: make the backend easier to inspect, debug, and connect to a future HR reviewer dashboard.
+
+Completed:
+
+- Added generic audit event fields:
+  - `event_type`
+  - `resource_type`
+  - `resource_id`
+  - `details_json`
+- Added draft lifecycle audit events:
+  - `draft_created`
+  - `draft_updated`
+  - `draft_approved`
+  - `draft_rejected`
+  - `draft_sent`
+- Added audit log filtering by:
+  - user ID
+  - request ID
+  - event type
+  - resource type
+  - resource ID
+  - status
+- Added email event retrieval and filtering by:
+  - status
+  - sender email
+  - source
+  - linked request ID
+- Added draft queue filtering by:
+  - status
+  - review required
+  - review priority
+  - review action
+  - recipient email
+- Added pagination metadata for:
+  - `GET /drafts`
+  - `GET /audit`
+  - `GET /email-events`
+  - `GET /hr-requests`
+- Standardized list response shape:
+
+```json
+{
+  "items": [],
+  "total": 0,
+  "limit": 50,
+  "offset": 0
+}
+```
+
+Remaining:
+
+- Add pagination metadata to secondary/nested endpoints if needed
+- Add sorting controls if required by a future dashboard
+- Add stronger database indexing before large datasets
+- Add reviewer identity fields once authentication is implemented
+
+---
+
+### Phase 9: RAG and Semantic Search Improvements
 
 Goal: improve retrieval quality beyond keyword matching.
 
@@ -306,7 +385,7 @@ Current implementation uses keyword-based retrieval because it is transparent, e
 
 ---
 
-### Phase 9: Safety-Sensitive Request Handling
+### Phase 10: Safety-Sensitive Request Handling
 
 Goal: avoid treating crisis, self-harm, or emergency messages as normal HR requests.
 
@@ -323,7 +402,7 @@ This phase should be handled carefully and separately from standard HR policy au
 
 ---
 
-### Phase 10: Production Readiness Improvements
+### Phase 11: Production Readiness Improvements
 
 Goal: improve deployment, maintainability, and operational quality.
 
@@ -339,6 +418,7 @@ Planned improvements:
 - Environment-specific settings
 - CI workflow for tests
 - Improved test database isolation
+- Standardized pagination metadata for main operational endpoints
 - Basic observability and health diagnostics
 - PII and sensitive-data redaction before LLM calls
 - Authentication and role-based authorization
@@ -388,19 +468,28 @@ HR systems process sensitive employee information. Even if the LLM is self-hoste
 
 ## Immediate Next Step
 
-The next recommended implementation step is **draft lifecycle audit logging**.
+The next recommended implementation step is **status transition validation and domain constants/enums**.
 
 Rationale:
 
-The system now supports draft creation, editing, approval, and rejection. These are important Human-in-the-Loop control actions, so they should be traceable.
+The system now has several important domain states:
+
+```text
+draft → approved → sent
+draft → rejected
+review_action: auto_response, review_optional, review_required, escalated
+review_priority: low, medium, high, critical
+email_event.status: received, processed
+```
+
+These values are currently useful, but they should become more centralized and harder to mistype as the project grows.
 
 Recommended first code changes:
 
-1. Add audit log entries when a draft is created.
-2. Add audit log entries when a draft body is updated.
-3. Add audit log entries when a draft is approved.
-4. Add audit log entries when a draft is rejected.
-5. Include `draft_id`, `request_id`, draft status, and review metadata in audit details.
-6. Add tests for draft lifecycle audit events.
+1. Add centralized constants or enums for draft statuses, review actions, review priorities, and email event statuses.
+2. Update services to use these constants instead of repeated string literals.
+3. Add explicit state transition validation for draft lifecycle actions.
+4. Return clearer errors for invalid state transitions.
+5. Add tests for valid and invalid transitions.
 
-This should be implemented before email sending, because sending an approved draft is a higher-risk workflow and should depend on reliable auditability.
+This should be implemented before real email sending, authentication, or frontend integration because the workflow state model should be reliable first.
