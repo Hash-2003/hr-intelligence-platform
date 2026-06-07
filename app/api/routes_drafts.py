@@ -4,9 +4,21 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.schemas.draft_schema import DraftResponseOut, DraftUpdateRequest, DraftResponseListOut
 from app.services.draft_response_service import DraftResponseService
+from app.core.exceptions import InvalidStateTransitionError
 
 router = APIRouter(prefix="/drafts", tags=["Draft Responses"])
 
+def _raise_invalid_transition_error(error: InvalidStateTransitionError) -> None:
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "message": str(error),
+            "resource_type": error.resource_type,
+            "resource_id": error.resource_id,
+            "current_status": error.current_status,
+            "attempted_action": error.attempted_action,
+        },
+    )
 
 @router.get("", response_model=DraftResponseListOut)
 def get_drafts(
@@ -65,15 +77,19 @@ def update_draft(
 ) -> DraftResponseOut:
     """Update a draft response body."""
     service = DraftResponseService(db)
-    draft = service.update_draft_body(
-        draft_id=draft_id,
-        body=payload.body,
-    )
+
+    try:
+        draft = service.update_draft_body(
+            draft_id=draft_id,
+            body=payload.body,
+        )
+    except InvalidStateTransitionError as error:
+        _raise_invalid_transition_error(error)
 
     if draft is None:
         raise HTTPException(
             status_code=404,
-            detail="Draft response not found or cannot be edited.",
+            detail="Draft response not found.",
         )
 
     return DraftResponseOut.model_validate(draft)
@@ -86,7 +102,11 @@ def approve_draft(
 ) -> DraftResponseOut:
     """Approve a draft response."""
     service = DraftResponseService(db)
-    draft = service.approve_draft(draft_id)
+
+    try:
+        draft = service.approve_draft(draft_id)
+    except InvalidStateTransitionError as error:
+        _raise_invalid_transition_error(error)
 
     if draft is None:
         raise HTTPException(status_code=404, detail="Draft response not found.")
@@ -101,12 +121,17 @@ def reject_draft(
 ) -> DraftResponseOut:
     """Reject a draft response."""
     service = DraftResponseService(db)
-    draft = service.reject_draft(draft_id)
+
+    try:
+        draft = service.reject_draft(draft_id)
+    except InvalidStateTransitionError as error:
+        _raise_invalid_transition_error(error)
 
     if draft is None:
         raise HTTPException(status_code=404, detail="Draft response not found.")
 
     return DraftResponseOut.model_validate(draft)
+
 
 @router.post("/{draft_id}/send", response_model=DraftResponseOut)
 def send_draft(
@@ -115,12 +140,16 @@ def send_draft(
 ) -> DraftResponseOut:
     """Simulate sending an approved draft response."""
     service = DraftResponseService(db)
-    draft = service.send_draft(draft_id)
+
+    try:
+        draft = service.send_draft(draft_id)
+    except InvalidStateTransitionError as error:
+        _raise_invalid_transition_error(error)
 
     if draft is None:
         raise HTTPException(
             status_code=404,
-            detail="Draft response not found or cannot be sent.",
+            detail="Draft response not found.",
         )
 
     return DraftResponseOut.model_validate(draft)

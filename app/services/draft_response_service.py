@@ -9,6 +9,9 @@ from app.database import DraftResponse
 from app.services.audit_service import AuditService
 from app.services.review_decision_service import ReviewDecision
 
+from app.core.constants import AuditEventType, DraftStatus, ResourceType
+from app.core.exceptions import InvalidStateTransitionError
+
 
 class DraftResponseService:
     """Service layer for human-reviewable draft responses."""
@@ -34,7 +37,7 @@ class DraftResponseService:
             recipient_email=recipient_email,
             subject=subject,
             body=body,
-            status="draft",
+            status=DraftStatus.DRAFT.value,
             review_action=review_decision.action,
             review_required=review_decision.review_required,
             review_priority=review_decision.priority,
@@ -47,7 +50,7 @@ class DraftResponseService:
         self.db.refresh(draft)
 
         self._create_draft_audit_event(
-            event_type="draft_created",
+            event_type=AuditEventType.DRAFT_CREATED.value,
             draft=draft,
         )
 
@@ -103,8 +106,13 @@ class DraftResponseService:
         if draft is None:
             return None
 
-        if draft.status != "draft":
-            return None
+        if draft.status != DraftStatus.DRAFT.value:
+            raise InvalidStateTransitionError(
+                resource_type=ResourceType.DRAFT_RESPONSE.value,
+                resource_id=draft.draft_id,
+                current_status=draft.status,
+                attempted_action="update",
+            )
 
         draft.body = body
         draft.updated_at = datetime.now(timezone.utc)
@@ -113,7 +121,7 @@ class DraftResponseService:
         self.db.refresh(draft)
 
         self._create_draft_audit_event(
-            event_type="draft_updated",
+            event_type=AuditEventType.DRAFT_UPDATED.value,
             draft=draft,
         )
 
@@ -126,14 +134,22 @@ class DraftResponseService:
         if draft is None:
             return None
 
-        draft.status = "approved"
+        if draft.status != DraftStatus.DRAFT.value:
+            raise InvalidStateTransitionError(
+                resource_type=ResourceType.DRAFT_RESPONSE.value,
+                resource_id=draft.draft_id,
+                current_status=draft.status,
+                attempted_action="approve",
+            )
+
+        draft.status = DraftStatus.APPROVED.value
         draft.updated_at = datetime.now(timezone.utc)
 
         self.db.commit()
         self.db.refresh(draft)
 
         self._create_draft_audit_event(
-            event_type="draft_approved",
+            event_type=AuditEventType.DRAFT_APPROVED.value,
             draft=draft,
         )
 
@@ -146,14 +162,22 @@ class DraftResponseService:
         if draft is None:
             return None
 
-        draft.status = "rejected"
+        if draft.status != DraftStatus.DRAFT.value:
+            raise InvalidStateTransitionError(
+                resource_type=ResourceType.DRAFT_RESPONSE.value,
+                resource_id=draft.draft_id,
+                current_status=draft.status,
+                attempted_action="reject",
+            )
+
+        draft.status = DraftStatus.REJECTED.value
         draft.updated_at = datetime.now(timezone.utc)
 
         self.db.commit()
         self.db.refresh(draft)
 
         self._create_draft_audit_event(
-            event_type="draft_rejected",
+            event_type=AuditEventType.DRAFT_REJECTED.value,
             draft=draft,
         )
 
@@ -166,17 +190,22 @@ class DraftResponseService:
         if draft is None:
             return None
 
-        if draft.status != "approved":
-            return None
+        if draft.status != DraftStatus.APPROVED.value:
+            raise InvalidStateTransitionError(
+                resource_type=ResourceType.DRAFT_RESPONSE.value,
+                resource_id=draft.draft_id,
+                current_status=draft.status,
+                attempted_action="send",
+            )
 
-        draft.status = "sent"
+        draft.status = DraftStatus.SENT.value
         draft.updated_at = datetime.now(timezone.utc)
 
         self.db.commit()
         self.db.refresh(draft)
 
         self._create_draft_audit_event(
-            event_type="draft_sent",
+            event_type=AuditEventType.DRAFT_SENT.value,
             draft=draft,
         )
 
@@ -190,7 +219,7 @@ class DraftResponseService:
         """Create a generic audit event for draft lifecycle changes."""
         self.audit_service.create_event(
             event_type=event_type,
-            resource_type="draft_response",
+            resource_type=ResourceType.DRAFT_RESPONSE.value,
             resource_id=draft.draft_id,
             request_id=draft.request_id,
             user_id=draft.recipient_email or "system",

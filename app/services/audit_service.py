@@ -3,6 +3,7 @@ import json
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
+from app.core.constants import AuditEventType, ResourceType
 from app.database import AuditLog
 
 
@@ -35,8 +36,8 @@ class AuditService:
             response_summary=response_summary,
             status=status,
             error_message=error_message,
-            event_type="request_processed",
-            resource_type="hr_request",
+            event_type=AuditEventType.REQUEST_PROCESSED.value,
+            resource_type=ResourceType.HR_REQUEST.value,
             resource_id=request_id,
             details_json=None,
         )

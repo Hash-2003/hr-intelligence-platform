@@ -3,6 +3,7 @@ from uuid import uuid4
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
+from app.core.constants import EmailEventStatus
 from app.database import EmailEvent
 
 
@@ -30,7 +31,7 @@ class EmailEventService:
             body=body,
             received_at=received_at,
             source=source,
-            status="received",
+            status=EmailEventStatus.RECEIVED.value,
         )
 
         self.db.add(event)
@@ -55,7 +56,7 @@ class EmailEventService:
             return None
 
         event.linked_request_id = linked_request_id
-        event.status = "processed"
+        event.status = EmailEventStatus.PROCESSED.value
 
         self.db.commit()
         self.db.refresh(event)

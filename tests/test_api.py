@@ -1,6 +1,7 @@
 import json
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -1309,12 +1310,20 @@ def test_approved_draft_cannot_be_updated():
 
         service.approve_draft(draft.draft_id)
 
-        updated = service.update_draft_body(
-            draft_id=draft.draft_id,
-            body="Should not update.",
-        )
+        from app.core.exceptions import InvalidStateTransitionError
 
-        assert updated is None
+        with pytest.raises(InvalidStateTransitionError) as exc_info:
+            service.update_draft_body(
+                draft_id=draft.draft_id,
+                body="Should not update.",
+            )
+
+        error = exc_info.value
+
+        assert error.resource_type == "draft_response"
+        assert error.resource_id == draft.draft_id
+        assert error.current_status == "approved"
+        assert error.attempted_action == "update"
 
     finally:
         db.close()
@@ -1386,9 +1395,17 @@ def test_unapproved_draft_cannot_be_sent():
             subject="Re: Annual leave request",
         )
 
-        sent = service.send_draft(draft.draft_id)
+        from app.core.exceptions import InvalidStateTransitionError
 
-        assert sent is None
+        with pytest.raises(InvalidStateTransitionError) as exc_info:
+            service.send_draft(draft.draft_id)
+
+        error = exc_info.value
+
+        assert error.resource_type == "draft_response"
+        assert error.resource_id == draft.draft_id
+        assert error.current_status == "draft"
+        assert error.attempted_action == "send"
 
     finally:
         db.close()
@@ -1447,8 +1464,115 @@ def test_send_draft_endpoint_rejects_unapproved_draft():
 
         response = client.post(f"/drafts/{draft.draft_id}/send")
 
-        assert response.status_code == 404
-        assert response.json()["detail"] == "Draft response not found or cannot be sent."
+        assert response.status_code == 409
+
+        detail = response.json()["detail"]
+
+        assert detail["resource_type"] == "draft_response"
+        assert detail["resource_id"] == draft.draft_id
+        assert detail["current_status"] == "draft"
+        assert detail["attempted_action"] == "send"
+        assert "Cannot perform 'send'" in detail["message"]
+
+    finally:
+        db.close()
+
+def test_approved_draft_cannot_be_rejected():
+    from app.core.exceptions import InvalidStateTransitionError
+    from app.database import SessionLocal
+    from app.services.draft_response_service import DraftResponseService
+
+    db = SessionLocal()
+
+    try:
+        request_id = _create_test_hr_request_for_draft_audit(db)
+        service = DraftResponseService(db)
+
+        draft = service.create_draft(
+            request_id=request_id,
+            body="Draft body.",
+            review_decision=_test_review_decision_for_draft_audit(),
+            recipient_email="employee@example.com",
+            subject="Re: Annual leave request",
+        )
+
+        service.approve_draft(draft.draft_id)
+
+        with pytest.raises(InvalidStateTransitionError) as exc_info:
+            service.reject_draft(draft.draft_id)
+
+        error = exc_info.value
+
+        assert error.current_status == "approved"
+        assert error.attempted_action == "reject"
+
+    finally:
+        db.close()
+
+def test_rejected_draft_cannot_be_approved():
+    from app.core.exceptions import InvalidStateTransitionError
+    from app.database import SessionLocal
+    from app.services.draft_response_service import DraftResponseService
+
+    db = SessionLocal()
+
+    try:
+        request_id = _create_test_hr_request_for_draft_audit(db)
+        service = DraftResponseService(db)
+
+        draft = service.create_draft(
+            request_id=request_id,
+            body="Draft body.",
+            review_decision=_test_review_decision_for_draft_audit(),
+            recipient_email="employee@example.com",
+            subject="Re: Annual leave request",
+        )
+
+        service.reject_draft(draft.draft_id)
+
+        with pytest.raises(InvalidStateTransitionError) as exc_info:
+            service.approve_draft(draft.draft_id)
+
+        error = exc_info.value
+
+        assert error.current_status == "rejected"
+        assert error.attempted_action == "approve"
+
+    finally:
+        db.close()
+
+def test_sent_draft_cannot_be_updated():
+    from app.core.exceptions import InvalidStateTransitionError
+    from app.database import SessionLocal
+    from app.services.draft_response_service import DraftResponseService
+
+    db = SessionLocal()
+
+    try:
+        request_id = _create_test_hr_request_for_draft_audit(db)
+        service = DraftResponseService(db)
+
+        draft = service.create_draft(
+            request_id=request_id,
+            body="Draft body.",
+            review_decision=_test_review_decision_for_draft_audit(),
+            recipient_email="employee@example.com",
+            subject="Re: Annual leave request",
+        )
+
+        service.approve_draft(draft.draft_id)
+        service.send_draft(draft.draft_id)
+
+        with pytest.raises(InvalidStateTransitionError) as exc_info:
+            service.update_draft_body(
+                draft_id=draft.draft_id,
+                body="Should not update sent draft.",
+            )
+
+        error = exc_info.value
+
+        assert error.current_status == "sent"
+        assert error.attempted_action == "update"
 
     finally:
         db.close()
