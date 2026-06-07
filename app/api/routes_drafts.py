@@ -2,13 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.schemas.draft_schema import DraftResponseOut, DraftUpdateRequest
+from app.schemas.draft_schema import DraftResponseOut, DraftUpdateRequest, DraftResponseListOut
 from app.services.draft_response_service import DraftResponseService
 
 router = APIRouter(prefix="/drafts", tags=["Draft Responses"])
 
 
-@router.get("", response_model=list[DraftResponseOut])
+@router.get("", response_model=DraftResponseListOut)
 def get_drafts(
     status: str | None = None,
     review_required: bool | None = None,
@@ -16,23 +16,30 @@ def get_drafts(
     review_action: str | None = None,
     recipient_email: str | None = None,
     limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
-) -> list[DraftResponseOut]:
-    """Retrieve draft responses, optionally filtered for review queues."""
+) -> DraftResponseListOut:
+    """Retrieve draft responses with optional filters and pagination metadata."""
     service = DraftResponseService(db)
-    drafts = service.get_drafts(
+    drafts, total = service.get_drafts(
         status=status,
         review_required=review_required,
         review_priority=review_priority,
         review_action=review_action,
         recipient_email=recipient_email,
         limit=limit,
+        offset=offset,
     )
 
-    return [
-        DraftResponseOut.model_validate(draft)
-        for draft in drafts
-    ]
+    return DraftResponseListOut(
+        items=[
+            DraftResponseOut.model_validate(draft)
+            for draft in drafts
+        ],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/{draft_id}", response_model=DraftResponseOut)

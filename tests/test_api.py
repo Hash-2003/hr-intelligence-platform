@@ -90,7 +90,11 @@ def test_get_audit_logs():
     assert response.status_code == 200
     data = response.json()
 
-    assert isinstance(data, list)
+    assert "items" in data
+    assert "total" in data
+    assert "limit" in data
+    assert "offset" in data
+    assert isinstance(data["items"], list)
 
 def test_requests_endpoint_with_mocked_workflow(monkeypatch):
     class MockWorkflow:
@@ -135,7 +139,11 @@ def test_get_hr_requests():
     assert response.status_code == 200
     data = response.json()
 
-    assert isinstance(data, list)
+    assert "items" in data
+    assert "total" in data
+    assert "limit" in data
+    assert "offset" in data
+    assert isinstance(data["items"], list)
 
 
 def test_get_hr_request_by_id_with_mocked_workflow(monkeypatch):
@@ -1119,7 +1127,7 @@ def test_create_draft_writes_draft_created_audit_event():
             subject="Re: Annual leave request",
         )
 
-        audit_logs = service.audit_service.get_logs(
+        audit_logs, _ = service.audit_service.get_logs(
             user_id="employee@example.com",
             limit=20,
         )
@@ -1178,7 +1186,7 @@ def test_update_draft_writes_draft_updated_audit_event():
         assert updated is not None
         assert updated.body == "Updated draft body."
 
-        audit_logs = service.audit_service.get_logs(
+        audit_logs, _ = service.audit_service.get_logs(
             user_id="employee@example.com",
             limit=20,
         )
@@ -1216,7 +1224,7 @@ def test_approve_draft_writes_draft_approved_audit_event():
         assert approved is not None
         assert approved.status == "approved"
 
-        audit_logs = service.audit_service.get_logs(
+        audit_logs, _ = service.audit_service.get_logs(
             user_id="employee@example.com",
             limit=20,
         )
@@ -1260,7 +1268,7 @@ def test_reject_draft_writes_draft_rejected_audit_event():
         assert rejected is not None
         assert rejected.status == "rejected"
 
-        audit_logs = service.audit_service.get_logs(
+        audit_logs, _ = service.audit_service.get_logs(
             user_id="employee@example.com",
             limit=20,
         )
@@ -1339,7 +1347,7 @@ def test_send_approved_draft_marks_as_sent_and_writes_audit_event():
         assert sent is not None
         assert sent.status == "sent"
 
-        audit_logs = service.audit_service.get_logs(
+        audit_logs, _ = service.audit_service.get_logs(
             user_id="employee@example.com",
             limit=30,
         )
@@ -1469,11 +1477,16 @@ def test_get_drafts_filters_by_status():
 
         assert response.status_code == 200
         data = response.json()
+        items = data["items"]
+
+        assert "total" in data
+        assert "limit" in data
+        assert "offset" in data
 
         assert any(
             item["draft_id"] == draft.draft_id
             and item["status"] == "approved"
-            for item in data
+            for item in items
         )
 
     finally:
@@ -1510,11 +1523,16 @@ def test_get_drafts_filters_by_review_priority():
 
         assert response.status_code == 200
         data = response.json()
+        items = data["items"]
+
+        assert "total" in data
+        assert "limit" in data
+        assert "offset" in data
 
         assert any(
             item["draft_id"] == draft.draft_id
             and item["review_priority"] == "high"
-            for item in data
+            for item in items
         )
 
     finally:
@@ -1551,11 +1569,16 @@ def test_get_drafts_filters_by_review_action():
 
         assert response.status_code == 200
         data = response.json()
+        items = data["items"]
+
+        assert "total" in data
+        assert "limit" in data
+        assert "offset" in data
 
         assert any(
             item["draft_id"] == draft.draft_id
             and item["review_action"] == "review_required"
-            for item in data
+            for item in items
         )
 
     finally:
@@ -1585,11 +1608,16 @@ def test_get_drafts_filters_by_recipient_email():
 
         assert response.status_code == 200
         data = response.json()
+        items = data["items"]
+
+        assert "total" in data
+        assert "limit" in data
+        assert "offset" in data
 
         assert any(
             item["draft_id"] == draft.draft_id
             and item["recipient_email"] == "specific.employee@example.com"
-            for item in data
+            for item in items
         )
 
     finally:
@@ -1633,6 +1661,11 @@ def test_get_drafts_supports_combined_filters():
 
         assert response.status_code == 200
         data = response.json()
+        items = data["items"]
+
+        assert "total" in data
+        assert "limit" in data
+        assert "offset" in data
 
         assert any(
             item["draft_id"] == draft.draft_id
@@ -1641,7 +1674,7 @@ def test_get_drafts_supports_combined_filters():
             and item["review_priority"] == "high"
             and item["review_action"] == "review_required"
             and item["recipient_email"] == "combined.employee@example.com"
-            for item in data
+            for item in items
         )
 
     finally:
@@ -1679,8 +1712,10 @@ def test_audit_logs_filter_by_event_type():
         assert response.status_code == 200
         data = response.json()
 
-        assert any(item["id"] == matching.id for item in data)
-        assert all(item["event_type"] == "draft_sent" for item in data)
+        items = data["items"]
+
+        assert any(item["id"] == matching.id for item in items)
+        assert all(item["event_type"] == "draft_sent" for item in items)
 
     finally:
         db.close()
@@ -1717,8 +1752,10 @@ def test_audit_logs_filter_by_resource_type():
         assert response.status_code == 200
         data = response.json()
 
-        assert any(item["id"] == matching.id for item in data)
-        assert all(item["resource_type"] == "draft_response" for item in data)
+        items = data["items"]
+
+        assert any(item["id"] == matching.id for item in items)
+        assert all(item["resource_type"] == "draft_response" for item in items)
 
     finally:
         db.close()
@@ -1755,9 +1792,11 @@ def test_audit_logs_filter_by_resource_id():
         assert response.status_code == 200
         data = response.json()
 
-        assert len(data) >= 1
-        assert any(item["id"] == matching.id for item in data)
-        assert all(item["resource_id"] == "specific-draft-resource-id" for item in data)
+        items = data["items"]
+
+        assert len(items) >= 1
+        assert any(item["id"] == matching.id for item in items)
+        assert all(item["resource_id"] == "specific-draft-resource-id" for item in items)
 
     finally:
         db.close()
@@ -1804,10 +1843,12 @@ def test_audit_logs_support_combined_filters():
         assert response.status_code == 200
         data = response.json()
 
-        assert len(data) >= 1
-        assert any(item["id"] == matching.id for item in data)
+        items = data["items"]
 
-        for item in data:
+        assert len(items) >= 1
+        assert any(item["id"] == matching.id for item in items)
+
+        for item in items:
             assert item["event_type"] == "draft_approved"
             assert item["resource_type"] == "draft_response"
             assert item["resource_id"] == "combined-draft-id"
@@ -1854,8 +1895,10 @@ def test_email_events_filter_by_status():
         assert response.status_code == 200
         data = response.json()
 
-        assert any(item["event_id"] == processed_event.event_id for item in data)
-        assert all(item["status"] == "processed" for item in data)
+        items = data["items"]
+
+        assert any(item["event_id"] == processed_event.event_id for item in items)
+        assert all(item["status"] == "processed" for item in items)
 
     finally:
         db.close()
@@ -1892,10 +1935,12 @@ def test_email_events_filter_by_sender_email():
         assert response.status_code == 200
         data = response.json()
 
-        assert any(item["event_id"] == matching_event.event_id for item in data)
+        items = data["items"]
+
+        assert any(item["event_id"] == matching_event.event_id for item in items)
         assert all(
             item["sender_email"] == "sender-filter@example.com"
-            for item in data
+            for item in items
         )
 
     finally:
@@ -1933,8 +1978,10 @@ def test_email_events_filter_by_source():
         assert response.status_code == 200
         data = response.json()
 
-        assert any(item["event_id"] == matching_event.event_id for item in data)
-        assert all(item["source"] == "webhook" for item in data)
+        items = data["items"]
+
+        assert any(item["event_id"] == matching_event.event_id for item in items)
+        assert all(item["source"] == "webhook" for item in items)
 
     finally:
         db.close()
@@ -1983,10 +2030,12 @@ def test_email_events_filter_by_linked_request_id():
         assert response.status_code == 200
         data = response.json()
 
-        assert any(item["event_id"] == matching_event.event_id for item in data)
+        items = data["items"]
+
+        assert any(item["event_id"] == matching_event.event_id for item in items)
         assert all(
             item["linked_request_id"] == "request-linked-filter"
-            for item in data
+            for item in items
         )
 
     finally:
@@ -2035,9 +2084,11 @@ def test_email_events_support_combined_filters():
         assert response.status_code == 200
         data = response.json()
 
-        assert any(item["event_id"] == matching_event.event_id for item in data)
+        items = data["items"]
 
-        for item in data:
+        assert any(item["event_id"] == matching_event.event_id for item in items)
+
+        for item in items:
             assert item["status"] == "processed"
             assert item["sender_email"] == "combined-email-filter@example.com"
             assert item["source"] == "webhook"
@@ -2045,3 +2096,64 @@ def test_email_events_support_combined_filters():
 
     finally:
         db.close()
+
+
+def test_drafts_endpoint_returns_pagination_metadata():
+    response = client.get("/drafts?limit=5&offset=0")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert "items" in data
+    assert "total" in data
+    assert "limit" in data
+    assert "offset" in data
+    assert isinstance(data["items"], list)
+    assert data["limit"] == 5
+    assert data["offset"] == 0
+
+
+def test_audit_endpoint_returns_pagination_metadata():
+    response = client.get("/audit?limit=5&offset=0")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert "items" in data
+    assert "total" in data
+    assert "limit" in data
+    assert "offset" in data
+    assert isinstance(data["items"], list)
+    assert data["limit"] == 5
+    assert data["offset"] == 0
+
+
+def test_email_events_endpoint_returns_pagination_metadata():
+    response = client.get("/email-events?limit=5&offset=0")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert "items" in data
+    assert "total" in data
+    assert "limit" in data
+    assert "offset" in data
+    assert isinstance(data["items"], list)
+    assert data["limit"] == 5
+    assert data["offset"] == 0
+
+
+def test_hr_requests_endpoint_returns_pagination_metadata():
+    response = client.get("/hr-requests?limit=5&offset=0")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert "items" in data
+    assert "total" in data
+    assert "limit" in data
+    assert "offset" in data
+    assert isinstance(data["items"], list)
+    assert data["limit"] == 5
+    assert data["offset"] == 0
+

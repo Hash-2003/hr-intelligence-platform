@@ -48,3 +48,11 @@ class EmailEventOut(BaseModel):
     model_config = {
         "from_attributes": True
     }
+
+class EmailEventListOut(BaseModel):
+    """Paginated email event list."""
+
+    items: list[EmailEventOut]
+    total: int
+    limit: int
+    offset: int

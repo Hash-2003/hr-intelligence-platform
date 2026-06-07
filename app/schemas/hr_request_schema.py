@@ -25,6 +25,13 @@ class HRRequestResponse(BaseModel):
         "from_attributes": True
     }
 
+class HRRequestListResponse(BaseModel):
+    """Paginated HR request list."""
+
+    items: list[HRRequestResponse]
+    total: int
+    limit: int
+    offset: int
 
 class AgentRunResponse(BaseModel):
     """Agent run record returned through the API."""

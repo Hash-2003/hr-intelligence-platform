@@ -28,6 +28,14 @@ class DraftResponseOut(BaseModel):
         "from_attributes": True
     }
 
+class DraftResponseListOut(BaseModel):
+    """Paginated draft response list."""
+
+    items: list[DraftResponseOut]
+    total: int
+    limit: int
+    offset: int
+
 
 class DraftUpdateRequest(BaseModel):
     """Request body for updating a draft response."""

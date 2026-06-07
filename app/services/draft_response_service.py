@@ -61,8 +61,9 @@ class DraftResponseService:
             review_action: str | None = None,
             recipient_email: str | None = None,
             limit: int = 50,
-    ) -> list[DraftResponse]:
-        """Retrieve draft responses, optionally filtered for review queues."""
+            offset: int = 0,
+    ) -> tuple[list[DraftResponse], int]:
+        """Retrieve draft responses with filters and pagination metadata."""
         query = self.db.query(DraftResponse)
 
         if status:
@@ -80,10 +81,11 @@ class DraftResponseService:
         if recipient_email:
             query = query.filter(DraftResponse.recipient_email == recipient_email)
 
-        return cast(
-            list[DraftResponse],
-            query.order_by(desc(DraftResponse.created_at)).limit(limit).all(),
-        )
+        total = query.count()
+
+        drafts = query.order_by(desc(DraftResponse.created_at)).offset(offset).limit(limit).all()
+
+        return cast(list[DraftResponse], drafts), total
 
     def get_draft_by_id(self, draft_id: str) -> DraftResponse | None:
         """Retrieve one draft by draft ID."""

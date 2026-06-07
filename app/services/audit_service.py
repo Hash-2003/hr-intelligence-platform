@@ -90,8 +90,9 @@ class AuditService:
             resource_id: str | None = None,
             status: str | None = None,
             limit: int = 50,
-    ) -> list[AuditLog]:
-        """Retrieve audit logs, optionally filtered."""
+            offset: int = 0,
+    ) -> tuple[list[AuditLog], int]:
+        """Retrieve audit logs with filters and pagination metadata."""
         query = self.db.query(AuditLog)
 
         if user_id:
@@ -112,4 +113,13 @@ class AuditService:
         if status:
             query = query.filter(AuditLog.status == status)
 
-        return query.order_by(desc(AuditLog.created_at)).limit(limit).all()
+        total = query.count()
+
+        logs = (
+            query.order_by(desc(AuditLog.created_at))
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+
+        return logs, total

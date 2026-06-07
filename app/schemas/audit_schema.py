@@ -27,3 +27,11 @@ class AuditLogResponse(BaseModel):
     model_config = {
         "from_attributes": True
     }
+
+class AuditLogListResponse(BaseModel):
+    """Paginated audit log list."""
+
+    items: list[AuditLogResponse]
+    total: int
+    limit: int
+    offset: int

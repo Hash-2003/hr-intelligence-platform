@@ -97,17 +97,40 @@ class HRRequestService:
 
         return agent_run
 
-    def get_requests(self, user_id: str | None = None, limit: int = 50) -> list[HRRequest]:
-        """Retrieve HR requests, optionally filtered by user."""
+    def get_requests(
+            self,
+            user_id: str | None = None,
+            status: str | None = None,
+            intent: str | None = None,
+            source_type: str | None = None,
+            limit: int = 50,
+            offset: int = 0,
+    ) -> tuple[list[HRRequest], int]:
+        """Retrieve HR requests with filters and pagination metadata."""
         query = self.db.query(HRRequest)
 
         if user_id:
             query = query.filter(HRRequest.user_id == user_id)
 
-        return cast(
-            list[HRRequest],
-            query.order_by(desc(HRRequest.created_at)).limit(limit).all(),
+        if status:
+            query = query.filter(HRRequest.status == status)
+
+        if intent:
+            query = query.filter(HRRequest.intent == intent)
+
+        if source_type:
+            query = query.filter(HRRequest.source_type == source_type)
+
+        total = query.count()
+
+        requests = (
+            query.order_by(desc(HRRequest.created_at))
+            .offset(offset)
+            .limit(limit)
+            .all()
         )
+
+        return requests, total
 
     def get_request_by_id(self, request_id: str) -> HRRequest | None:
         """Retrieve one HR request by request ID."""

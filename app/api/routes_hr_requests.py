@@ -2,26 +2,47 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.schemas.hr_request_schema import AgentRunResponse, HRRequestResponse, RequestPolicySourceResponse
+from app.schemas.hr_request_schema import (
+    AgentRunResponse,
+    HRRequestListResponse,
+    HRRequestResponse,
+    RequestPolicySourceResponse,
+)
 from app.services.hr_request_service import HRRequestService
 
 router = APIRouter(prefix="/hr-requests", tags=["HR Requests"])
 
 
-@router.get("", response_model=list[HRRequestResponse])
+@router.get("", response_model=HRRequestListResponse)
 def get_hr_requests(
     user_id: str | None = None,
+    status: str | None = None,
+    intent: str | None = None,
+    source_type: str | None = None,
     limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
-) -> list[HRRequestResponse]:
-    """Retrieve HR requests, optionally filtered by user."""
+) -> HRRequestListResponse:
+    """Retrieve HR requests with optional filters and pagination metadata."""
     service = HRRequestService(db)
-    requests = service.get_requests(user_id=user_id, limit=limit)
+    requests, total = service.get_requests(
+        user_id=user_id,
+        status=status,
+        intent=intent,
+        source_type=source_type,
+        limit=limit,
+        offset=offset,
+    )
 
-    return [
-        HRRequestResponse.model_validate(request)
-        for request in requests
-    ]
+    return HRRequestListResponse(
+        items=[
+            HRRequestResponse.model_validate(request)
+            for request in requests
+        ],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/{request_id}", response_model=HRRequestResponse)
@@ -57,6 +78,7 @@ def get_hr_request_agent_runs(
         AgentRunResponse.model_validate(run)
         for run in runs
     ]
+
 
 @router.get("/{request_id}/policy-sources", response_model=list[RequestPolicySourceResponse])
 def get_hr_request_policy_sources(

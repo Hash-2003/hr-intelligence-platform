@@ -69,8 +69,9 @@ class EmailEventService:
             source: str | None = None,
             linked_request_id: str | None = None,
             limit: int = 50,
-    ) -> list[EmailEvent]:
-        """Retrieve email events, optionally filtered."""
+            offset: int = 0,
+    ) -> tuple[list[EmailEvent], int]:
+        """Retrieve email events with filters and pagination metadata."""
         query = self.db.query(EmailEvent)
 
         if status:
@@ -85,7 +86,16 @@ class EmailEventService:
         if linked_request_id:
             query = query.filter(EmailEvent.linked_request_id == linked_request_id)
 
-        return query.order_by(desc(EmailEvent.created_at)).limit(limit).all()
+        total = query.count()
+
+        events = (
+            query.order_by(desc(EmailEvent.created_at))
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+
+        return events, total
 
     def get_email_event_by_id(self, event_id: str) -> EmailEvent | None:
         """Retrieve one email event by event ID."""
