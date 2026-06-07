@@ -1817,3 +1817,231 @@ def test_audit_logs_support_combined_filters():
 
     finally:
         db.close()
+
+def test_email_events_filter_by_status():
+    from app.database import SessionLocal
+    from app.services.email_event_service import EmailEventService
+
+    db = SessionLocal()
+
+    try:
+        service = EmailEventService(db)
+
+        processed_event = service.create_event(
+            sender_email="status-filter@example.com",
+            sender_name="Status Filter",
+            subject="Processed event",
+            body="Processed body",
+            received_at=None,
+            source="webhook",
+        )
+        service.mark_processed(
+            event_id=processed_event.event_id,
+            linked_request_id="request-status-filter",
+        )
+
+        service.create_event(
+            sender_email="status-filter@example.com",
+            sender_name="Status Filter",
+            subject="Received event",
+            body="Received body",
+            received_at=None,
+            source="webhook",
+        )
+
+        response = client.get("/email-events?status=processed")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert any(item["event_id"] == processed_event.event_id for item in data)
+        assert all(item["status"] == "processed" for item in data)
+
+    finally:
+        db.close()
+
+def test_email_events_filter_by_sender_email():
+    from app.database import SessionLocal
+    from app.services.email_event_service import EmailEventService
+
+    db = SessionLocal()
+
+    try:
+        service = EmailEventService(db)
+
+        matching_event = service.create_event(
+            sender_email="sender-filter@example.com",
+            sender_name="Sender Filter",
+            subject="Sender filter event",
+            body="Sender filter body",
+            received_at=None,
+            source="webhook",
+        )
+
+        service.create_event(
+            sender_email="other-sender@example.com",
+            sender_name="Other Sender",
+            subject="Other event",
+            body="Other body",
+            received_at=None,
+            source="webhook",
+        )
+
+        response = client.get("/email-events?sender_email=sender-filter@example.com")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert any(item["event_id"] == matching_event.event_id for item in data)
+        assert all(
+            item["sender_email"] == "sender-filter@example.com"
+            for item in data
+        )
+
+    finally:
+        db.close()
+
+def test_email_events_filter_by_source():
+    from app.database import SessionLocal
+    from app.services.email_event_service import EmailEventService
+
+    db = SessionLocal()
+
+    try:
+        service = EmailEventService(db)
+
+        matching_event = service.create_event(
+            sender_email="source-filter@example.com",
+            sender_name="Source Filter",
+            subject="Webhook source event",
+            body="Webhook source body",
+            received_at=None,
+            source="webhook",
+        )
+
+        service.create_event(
+            sender_email="source-filter@example.com",
+            sender_name="Source Filter",
+            subject="Manual source event",
+            body="Manual source body",
+            received_at=None,
+            source="manual",
+        )
+
+        response = client.get("/email-events?source=webhook")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert any(item["event_id"] == matching_event.event_id for item in data)
+        assert all(item["source"] == "webhook" for item in data)
+
+    finally:
+        db.close()
+
+def test_email_events_filter_by_linked_request_id():
+    from app.database import SessionLocal
+    from app.services.email_event_service import EmailEventService
+
+    db = SessionLocal()
+
+    try:
+        service = EmailEventService(db)
+
+        matching_event = service.create_event(
+            sender_email="linked-request@example.com",
+            sender_name="Linked Request",
+            subject="Linked request event",
+            body="Linked request body",
+            received_at=None,
+            source="webhook",
+        )
+
+        service.mark_processed(
+            event_id=matching_event.event_id,
+            linked_request_id="request-linked-filter",
+        )
+
+        other_event = service.create_event(
+            sender_email="linked-request@example.com",
+            sender_name="Linked Request",
+            subject="Other linked request event",
+            body="Other linked body",
+            received_at=None,
+            source="webhook",
+        )
+
+        service.mark_processed(
+            event_id=other_event.event_id,
+            linked_request_id="request-other-linked-filter",
+        )
+
+        response = client.get(
+            "/email-events?linked_request_id=request-linked-filter"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert any(item["event_id"] == matching_event.event_id for item in data)
+        assert all(
+            item["linked_request_id"] == "request-linked-filter"
+            for item in data
+        )
+
+    finally:
+        db.close()
+
+def test_email_events_support_combined_filters():
+    from app.database import SessionLocal
+    from app.services.email_event_service import EmailEventService
+
+    db = SessionLocal()
+
+    try:
+        service = EmailEventService(db)
+
+        matching_event = service.create_event(
+            sender_email="combined-email-filter@example.com",
+            sender_name="Combined Filter",
+            subject="Combined filter event",
+            body="Combined body",
+            received_at=None,
+            source="webhook",
+        )
+
+        service.mark_processed(
+            event_id=matching_event.event_id,
+            linked_request_id="request-combined-email-filter",
+        )
+
+        service.create_event(
+            sender_email="combined-email-filter@example.com",
+            sender_name="Combined Filter",
+            subject="Non-processed event",
+            body="Other body",
+            received_at=None,
+            source="manual",
+        )
+
+        response = client.get(
+            "/email-events"
+            "?status=processed"
+            "&sender_email=combined-email-filter@example.com"
+            "&source=webhook"
+            "&linked_request_id=request-combined-email-filter"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert any(item["event_id"] == matching_event.event_id for item in data)
+
+        for item in data:
+            assert item["status"] == "processed"
+            assert item["sender_email"] == "combined-email-filter@example.com"
+            assert item["source"] == "webhook"
+            assert item["linked_request_id"] == "request-combined-email-filter"
+
+    finally:
+        db.close()

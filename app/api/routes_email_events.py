@@ -11,12 +11,21 @@ router = APIRouter(prefix="/email-events", tags=["Email Events"])
 @router.get("", response_model=list[EmailEventOut])
 def get_email_events(
     status: str | None = None,
+    sender_email: str | None = None,
+    source: str | None = None,
+    linked_request_id: str | None = None,
     limit: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
 ) -> list[EmailEventOut]:
-    """Retrieve stored email webhook events."""
+    """Retrieve stored email webhook events with optional filters."""
     service = EmailEventService(db)
-    events = service.get_email_events(status=status, limit=limit)
+    events = service.get_email_events(
+        status=status,
+        sender_email=sender_email,
+        source=source,
+        linked_request_id=linked_request_id,
+        limit=limit,
+    )
 
     return [
         EmailEventOut.model_validate(event)

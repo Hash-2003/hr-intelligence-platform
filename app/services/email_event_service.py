@@ -62,25 +62,28 @@ class EmailEventService:
 
         return event
 
-    def get_events(self, limit: int = 50) -> list[EmailEvent]:
-        """Retrieve email events."""
-        return (
-            self.db.query(EmailEvent)
-            .order_by(desc(EmailEvent.created_at))
-            .limit(limit)
-            .all()
-        )
-
     def get_email_events(
             self,
             status: str | None = None,
+            sender_email: str | None = None,
+            source: str | None = None,
+            linked_request_id: str | None = None,
             limit: int = 50,
     ) -> list[EmailEvent]:
-        """Retrieve email events, optionally filtered by status."""
+        """Retrieve email events, optionally filtered."""
         query = self.db.query(EmailEvent)
 
         if status:
             query = query.filter(EmailEvent.status == status)
+
+        if sender_email:
+            query = query.filter(EmailEvent.sender_email == sender_email)
+
+        if source:
+            query = query.filter(EmailEvent.source == source)
+
+        if linked_request_id:
+            query = query.filter(EmailEvent.linked_request_id == linked_request_id)
 
         return query.order_by(desc(EmailEvent.created_at)).limit(limit).all()
 
