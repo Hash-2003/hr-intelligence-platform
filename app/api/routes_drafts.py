@@ -63,6 +63,9 @@ def get_drafts(
 def get_draft(
     draft_id: str,
     db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(
+        require_roles(UserRole.HR_REVIEWER, UserRole.ADMIN)
+    ),
 ) -> DraftResponseOut:
     """Retrieve one draft response."""
     service = DraftResponseService(db)
@@ -79,6 +82,9 @@ def update_draft(
     draft_id: str,
     payload: DraftUpdateRequest,
     db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(
+        require_roles(UserRole.HR_REVIEWER, UserRole.ADMIN)
+    ),
 ) -> DraftResponseOut:
     """Update a draft response body."""
     service = DraftResponseService(db)
@@ -87,6 +93,8 @@ def update_draft(
         draft = service.update_draft_body(
             draft_id=draft_id,
             body=payload.body,
+            actor_user_id=current_user.user_id,
+            actor_role=current_user.role,
         )
     except InvalidStateTransitionError as error:
         _raise_invalid_transition_error(error)
@@ -104,12 +112,19 @@ def update_draft(
 def approve_draft(
     draft_id: str,
     db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(
+        require_roles(UserRole.HR_REVIEWER, UserRole.ADMIN)
+    ),
 ) -> DraftResponseOut:
     """Approve a draft response."""
     service = DraftResponseService(db)
 
     try:
-        draft = service.approve_draft(draft_id)
+        draft = service.approve_draft(
+            draft_id=draft_id,
+            actor_user_id=current_user.user_id,
+            actor_role=current_user.role,
+        )
     except InvalidStateTransitionError as error:
         _raise_invalid_transition_error(error)
 
@@ -123,12 +138,19 @@ def approve_draft(
 def reject_draft(
     draft_id: str,
     db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(
+        require_roles(UserRole.HR_REVIEWER, UserRole.ADMIN)
+    ),
 ) -> DraftResponseOut:
     """Reject a draft response."""
     service = DraftResponseService(db)
 
     try:
-        draft = service.reject_draft(draft_id)
+        draft = service.reject_draft(
+            draft_id=draft_id,
+            actor_user_id=current_user.user_id,
+            actor_role=current_user.role,
+        )
     except InvalidStateTransitionError as error:
         _raise_invalid_transition_error(error)
 
@@ -142,12 +164,19 @@ def reject_draft(
 def send_draft(
     draft_id: str,
     db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(
+        require_roles(UserRole.HR_REVIEWER, UserRole.ADMIN)
+    ),
 ) -> DraftResponseOut:
     """Simulate sending an approved draft response."""
     service = DraftResponseService(db)
 
     try:
-        draft = service.send_draft(draft_id)
+        draft = service.send_draft(
+            draft_id=draft_id,
+            actor_user_id=current_user.user_id,
+            actor_role=current_user.role,
+        )
     except InvalidStateTransitionError as error:
         _raise_invalid_transition_error(error)
 

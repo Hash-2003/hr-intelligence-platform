@@ -99,7 +99,13 @@ class DraftResponseService:
             .first(),
         )
 
-    def update_draft_body(self, draft_id: str, body: str) -> DraftResponse | None:
+    def update_draft_body(
+            self,
+            draft_id: str,
+            body: str,
+            actor_user_id: str | None = None,
+            actor_role: str | None = None,
+    ) -> DraftResponse | None:
         """Update the body of a draft response if it is still editable."""
         draft = self.get_draft_by_id(draft_id)
 
@@ -123,11 +129,18 @@ class DraftResponseService:
         self._create_draft_audit_event(
             event_type=AuditEventType.DRAFT_UPDATED.value,
             draft=draft,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
         )
 
         return draft
 
-    def approve_draft(self, draft_id: str) -> DraftResponse | None:
+    def approve_draft(
+            self,
+            draft_id: str,
+            actor_user_id: str | None = None,
+            actor_role: str | None = None,
+    ) -> DraftResponse | None:
         """Mark a draft as approved."""
         draft = self.get_draft_by_id(draft_id)
 
@@ -151,11 +164,18 @@ class DraftResponseService:
         self._create_draft_audit_event(
             event_type=AuditEventType.DRAFT_APPROVED.value,
             draft=draft,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
         )
 
         return draft
 
-    def reject_draft(self, draft_id: str) -> DraftResponse | None:
+    def reject_draft(
+            self,
+            draft_id: str,
+            actor_user_id: str | None = None,
+            actor_role: str | None = None,
+    ) -> DraftResponse | None:
         """Mark a draft as rejected."""
         draft = self.get_draft_by_id(draft_id)
 
@@ -179,11 +199,18 @@ class DraftResponseService:
         self._create_draft_audit_event(
             event_type=AuditEventType.DRAFT_REJECTED.value,
             draft=draft,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
         )
 
         return draft
 
-    def send_draft(self, draft_id: str) -> DraftResponse | None:
+    def send_draft(
+            self,
+            draft_id: str,
+            actor_user_id: str | None = None,
+            actor_role: str | None = None,
+    ) -> DraftResponse | None:
         """Simulate sending an approved draft response."""
         draft = self.get_draft_by_id(draft_id)
 
@@ -207,14 +234,18 @@ class DraftResponseService:
         self._create_draft_audit_event(
             event_type=AuditEventType.DRAFT_SENT.value,
             draft=draft,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
         )
 
         return draft
 
     def _create_draft_audit_event(
-        self,
-        event_type: str,
-        draft: DraftResponse,
+            self,
+            event_type: str,
+            draft: DraftResponse,
+            actor_user_id: str | None = None,
+            actor_role: str | None = None,
     ) -> None:
         """Create a generic audit event for draft lifecycle changes."""
         self.audit_service.create_event(
@@ -235,5 +266,7 @@ class DraftResponseService:
                 "review_priority": draft.review_priority,
                 "review_reason": draft.review_reason,
                 "review_decision_source": draft.review_decision_source,
+                "actor_user_id": actor_user_id,
+                "actor_role": actor_role,
             },
         )
