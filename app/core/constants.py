@@ -53,3 +53,10 @@ class ResourceType(StrEnum):
     HR_REQUEST = "hr_request"
     DRAFT_RESPONSE = "draft_response"
     EMAIL_EVENT = "email_event"
+
+class UserRole(StrEnum):
+    """Supported mock user roles."""
+
+    EMPLOYEE = "employee"
+    HR_REVIEWER = "hr_reviewer"
+    ADMIN = "admin"

@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.schemas.audit_schema import AuditLogResponse, AuditLogListResponse
 from app.services.audit_service import AuditService
+from app.core.auth import CurrentUser, require_roles
+from app.core.constants import UserRole
 
 router = APIRouter(prefix="/audit", tags=["Audit"])
 
@@ -19,6 +21,9 @@ def get_audit_logs(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(
+        require_roles(UserRole.HR_REVIEWER, UserRole.ADMIN)
+),
 ) -> AuditLogListResponse:
     """Retrieve audit logs with optional filters and pagination metadata."""
     service = AuditService(db)

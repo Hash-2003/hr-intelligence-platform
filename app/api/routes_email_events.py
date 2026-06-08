@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.schemas.webhook_schema import EmailEventListOut, EmailEventOut
 from app.services.email_event_service import EmailEventService
+from app.core.auth import CurrentUser, require_roles
+from app.core.constants import UserRole
 
 router = APIRouter(prefix="/email-events", tags=["Email Events"])
 
@@ -17,6 +19,9 @@ def get_email_events(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(
+        require_roles(UserRole.HR_REVIEWER, UserRole.ADMIN)
+    ),
 ) -> EmailEventListOut:
     """Retrieve stored email webhook events with filters and pagination metadata."""
     service = EmailEventService(db)

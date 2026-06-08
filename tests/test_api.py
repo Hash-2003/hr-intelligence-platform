@@ -15,6 +15,21 @@ from app.services.review_decision_service import ReviewDecisionService, ReviewDe
 
 client = TestClient(app)
 
+REVIEWER_HEADERS = {
+    "X-User-Id": "hr_reviewer_test",
+    "X-User-Role": "hr_reviewer",
+}
+
+ADMIN_HEADERS = {
+    "X-User-Id": "admin_test",
+    "X-User-Role": "admin",
+}
+
+EMPLOYEE_HEADERS = {
+    "X-User-Id": "employee_test",
+    "X-User-Role": "employee",
+}
+
 
 def test_health_endpoint_returns_ok():
     response = client.get("/health")
@@ -86,7 +101,7 @@ def test_get_user_memory():
 
 
 def test_get_audit_logs():
-    response = client.get("/audit")
+    response = client.get("/audit", headers=REVIEWER_HEADERS)
 
     assert response.status_code == 200
     data = response.json()
@@ -96,6 +111,56 @@ def test_get_audit_logs():
     assert "limit" in data
     assert "offset" in data
     assert isinstance(data["items"], list)
+
+
+
+def test_protected_drafts_endpoint_requires_auth_headers():
+    response = client.get("/drafts")
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Missing X-User-Id header."
+
+
+def test_employee_cannot_access_draft_queue():
+    response = client.get(
+        "/drafts",
+        headers=EMPLOYEE_HEADERS,
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Insufficient permissions."
+
+
+def test_reviewer_can_access_draft_queue():
+    response = client.get(
+        "/drafts",
+        headers=REVIEWER_HEADERS,
+    )
+
+    assert response.status_code == 200
+
+
+def test_admin_can_access_audit_logs():
+    response = client.get(
+        "/audit",
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status_code == 200
+
+
+def test_invalid_role_is_rejected():
+    response = client.get(
+        "/drafts",
+        headers={
+            "X-User-Id": "bad_role_user",
+            "X-User-Role": "manager",
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Invalid user role."
+
 
 def test_requests_endpoint_with_mocked_workflow(monkeypatch):
     class MockWorkflow:
@@ -1428,12 +1493,18 @@ def test_send_draft_endpoint_sends_approved_draft():
             subject="Re: Annual leave request",
         )
 
-        approve_response = client.post(f"/drafts/{draft.draft_id}/approve")
+        approve_response = client.post(
+            f"/drafts/{draft.draft_id}/approve",
+            headers=REVIEWER_HEADERS,
+        )
 
         assert approve_response.status_code == 200
         assert approve_response.json()["status"] == "approved"
 
-        send_response = client.post(f"/drafts/{draft.draft_id}/send")
+        send_response = client.post(
+            f"/drafts/{draft.draft_id}/send",
+            headers=REVIEWER_HEADERS,
+        )
 
         assert send_response.status_code == 200
         data = send_response.json()
@@ -1462,7 +1533,10 @@ def test_send_draft_endpoint_rejects_unapproved_draft():
             subject="Re: Annual leave request",
         )
 
-        response = client.post(f"/drafts/{draft.draft_id}/send")
+        response = client.post(
+            f"/drafts/{draft.draft_id}/send",
+            headers=REVIEWER_HEADERS,
+        )
 
         assert response.status_code == 409
 
@@ -1597,7 +1671,10 @@ def test_get_drafts_filters_by_status():
 
         service.approve_draft(draft.draft_id)
 
-        response = client.get("/drafts?status=approved")
+        response = client.get(
+            "/drafts?status=approved",
+            headers=REVIEWER_HEADERS,
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -1643,7 +1720,10 @@ def test_get_drafts_filters_by_review_priority():
             subject="Re: Sensitive HR request",
         )
 
-        response = client.get("/drafts?review_priority=high")
+        response = client.get(
+            "/drafts?review_priority=high",
+            headers=REVIEWER_HEADERS,
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -1689,7 +1769,10 @@ def test_get_drafts_filters_by_review_action():
             subject="Re: HR concern",
         )
 
-        response = client.get("/drafts?review_action=review_required")
+        response = client.get(
+            "/drafts?review_action=review_required",
+            headers=REVIEWER_HEADERS,
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -1727,7 +1810,8 @@ def test_get_drafts_filters_by_recipient_email():
         )
 
         response = client.get(
-            "/drafts?recipient_email=specific.employee@example.com"
+            "/drafts?recipient_email=specific.employee@example.com",
+            headers=REVIEWER_HEADERS,
         )
 
         assert response.status_code == 200
@@ -1780,7 +1864,8 @@ def test_get_drafts_supports_combined_filters():
             "&review_required=true"
             "&review_priority=high"
             "&review_action=review_required"
-            "&recipient_email=combined.employee@example.com"
+            "&recipient_email=combined.employee@example.com",
+            headers=REVIEWER_HEADERS,
         )
 
         assert response.status_code == 200
@@ -1831,7 +1916,10 @@ def test_audit_logs_filter_by_event_type():
             details={"test": "other"},
         )
 
-        response = client.get("/audit?event_type=draft_sent")
+        response = client.get(
+            "/audit?event_type=draft_sent",
+            headers=REVIEWER_HEADERS,
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -1871,7 +1959,10 @@ def test_audit_logs_filter_by_resource_type():
             details={"test": "other"},
         )
 
-        response = client.get("/audit?resource_type=draft_response")
+        response = client.get(
+            "/audit?resource_type=draft_response",
+            headers=REVIEWER_HEADERS,
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -1911,7 +2002,10 @@ def test_audit_logs_filter_by_resource_id():
             details={"test": "other"},
         )
 
-        response = client.get("/audit?resource_id=specific-draft-resource-id")
+        response = client.get(
+            "/audit?resource_id=specific-draft-resource-id",
+            headers=REVIEWER_HEADERS,
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -1961,7 +2055,8 @@ def test_audit_logs_support_combined_filters():
             "&resource_id=combined-draft-id"
             "&request_id=combined-request-id"
             "&user_id=combined-audit@example.com"
-            "&status=success"
+            "&status=success",
+            headers=REVIEWER_HEADERS,
         )
 
         assert response.status_code == 200
@@ -2014,7 +2109,10 @@ def test_email_events_filter_by_status():
             source="webhook",
         )
 
-        response = client.get("/email-events?status=processed")
+        response = client.get(
+            "/email-events?status=processed",
+            headers=REVIEWER_HEADERS,
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -2054,7 +2152,10 @@ def test_email_events_filter_by_sender_email():
             source="webhook",
         )
 
-        response = client.get("/email-events?sender_email=sender-filter@example.com")
+        response = client.get(
+            "/email-events?sender_email=sender-filter@example.com",
+            headers=REVIEWER_HEADERS,
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -2097,7 +2198,10 @@ def test_email_events_filter_by_source():
             source="manual",
         )
 
-        response = client.get("/email-events?source=webhook")
+        response = client.get(
+            "/email-events?source=webhook",
+            headers=REVIEWER_HEADERS,
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -2148,7 +2252,8 @@ def test_email_events_filter_by_linked_request_id():
         )
 
         response = client.get(
-            "/email-events?linked_request_id=request-linked-filter"
+            "/email-events?linked_request_id=request-linked-filter",
+            headers=REVIEWER_HEADERS,
         )
 
         assert response.status_code == 200
@@ -2202,7 +2307,8 @@ def test_email_events_support_combined_filters():
             "?status=processed"
             "&sender_email=combined-email-filter@example.com"
             "&source=webhook"
-            "&linked_request_id=request-combined-email-filter"
+            "&linked_request_id=request-combined-email-filter",
+            headers=REVIEWER_HEADERS,
         )
 
         assert response.status_code == 200
@@ -2223,7 +2329,10 @@ def test_email_events_support_combined_filters():
 
 
 def test_drafts_endpoint_returns_pagination_metadata():
-    response = client.get("/drafts?limit=5&offset=0")
+    response = client.get(
+        "/drafts?limit=5&offset=0",
+        headers=REVIEWER_HEADERS,
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -2238,7 +2347,10 @@ def test_drafts_endpoint_returns_pagination_metadata():
 
 
 def test_audit_endpoint_returns_pagination_metadata():
-    response = client.get("/audit?limit=5&offset=0")
+    response = client.get(
+        "/audit?limit=5&offset=0",
+        headers=REVIEWER_HEADERS,
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -2253,7 +2365,10 @@ def test_audit_endpoint_returns_pagination_metadata():
 
 
 def test_email_events_endpoint_returns_pagination_metadata():
-    response = client.get("/email-events?limit=5&offset=0")
+    response = client.get(
+        "/email-events?limit=5&offset=0",
+        headers=REVIEWER_HEADERS,
+    )
 
     assert response.status_code == 200
     data = response.json()

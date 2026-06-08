@@ -5,6 +5,8 @@ from app.database import get_db
 from app.schemas.draft_schema import DraftResponseOut, DraftUpdateRequest, DraftResponseListOut
 from app.services.draft_response_service import DraftResponseService
 from app.core.exceptions import InvalidStateTransitionError
+from app.core.auth import CurrentUser, require_roles
+from app.core.constants import UserRole
 
 router = APIRouter(prefix="/drafts", tags=["Draft Responses"])
 
@@ -30,6 +32,9 @@ def get_drafts(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(
+        require_roles(UserRole.HR_REVIEWER, UserRole.ADMIN)
+    ),
 ) -> DraftResponseListOut:
     """Retrieve draft responses with optional filters and pagination metadata."""
     service = DraftResponseService(db)
