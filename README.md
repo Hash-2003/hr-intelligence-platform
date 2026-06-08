@@ -43,6 +43,10 @@ The project started as a technical challenge implementation and is now being ext
 - Draft send simulation after approval
 - Email-formatted draft responses using a dedicated formatter
 - Email event retrieval and filtering endpoints
+- Reviewer/admin actor metadata in draft lifecycle audit events
+- Mock header-based RBAC for reviewer/admin operations
+- Explicit draft state transition validation with `409 Conflict` responses for invalid lifecycle actions
+- Centralized domain constants for draft statuses, review actions, priorities, email event statuses, audit events, resource types, and roles
 - Append-only audit logging
 - Safe failure handling without exposing raw Python stack traces
 - SQLite database
@@ -61,7 +65,7 @@ The project started as a technical challenge implementation and is now being ext
 - Docker support
 - PostgreSQL and migration support
 - CI workflow
-- Authentication and role-based access control
+- Real JWT/OAuth authentication and production-grade role-based access control
 
 ## Tech Stack
 
@@ -191,6 +195,52 @@ GET /email-events?status=processed&limit=20&offset=0
 GET /hr-requests?intent=leave&limit=20&offset=0
 ```
 
+
+## Mock Authentication and RBAC
+
+The current implementation includes a lightweight mock authentication and authorization layer for reviewer/admin operations.
+
+Protected review and observability endpoints require request headers:
+
+```http
+X-User-Id: hr_reviewer_001
+X-User-Role: hr_reviewer
+```
+
+Supported mock roles:
+
+```text
+employee
+hr_reviewer
+admin
+```
+
+Current access rules:
+
+| Role | Access |
+|---|---|
+| `employee` | Can submit normal HR requests and webhook-style intake remains public for testing/integration. Cannot access review queues or audit/event views. |
+| `hr_reviewer` | Can view, edit, approve, reject, and send-simulate drafts. Can view audit logs and email events. |
+| `admin` | Has the same reviewer access in the current mock RBAC layer and is reserved for broader admin operations later. |
+
+Protected endpoints currently include:
+
+```text
+GET /drafts
+GET /drafts/{draft_id}
+PATCH /drafts/{draft_id}
+POST /drafts/{draft_id}/approve
+POST /drafts/{draft_id}/reject
+POST /drafts/{draft_id}/send
+GET /audit
+GET /email-events
+GET /email-events/{event_id}
+```
+
+Missing authentication headers return `401 Unauthorized`. Valid users with insufficient role permissions return `403 Forbidden`.
+
+This is intentionally a mock RBAC layer for local development and portfolio demonstration. A production version should replace it with JWT/OAuth or enterprise identity integration.
+
 ## Date-Aware Leave Handling
 
 The system includes deterministic leave date fact extraction for leave-related requests.
@@ -271,6 +321,34 @@ draft → rejected
 ```
 
 The `sent` state is currently a simulation. It marks an approved draft as sent and records the action in the audit log, but it does not send a real email.
+
+
+Invalid lifecycle transitions are rejected with `409 Conflict`. For example, a draft cannot be sent before approval, and an approved, rejected, or sent draft cannot be edited as a normal draft.
+
+State rules:
+
+```text
+draft → approved → sent
+draft → rejected
+```
+
+Invalid examples:
+
+```text
+draft → sent
+approved → rejected
+rejected → approved
+sent → update
+```
+
+Reviewer/admin actions performed through protected endpoints include actor metadata in draft lifecycle audit events:
+
+```json
+{
+  "actor_user_id": "hr_reviewer_test",
+  "actor_role": "hr_reviewer"
+}
+```
 
 Webhook-generated drafts are formatted as email replies:
 
@@ -669,6 +747,14 @@ This endpoint improves traceability by showing which policy sources influenced a
 
 ## Draft Response Retrieval and Review
 
+Protected draft endpoints require mock reviewer/admin headers:
+
+```http
+X-User-Id: hr_reviewer_test
+X-User-Role: hr_reviewer
+```
+
+
 ### Retrieve Drafts
 
 ```http
@@ -864,11 +950,22 @@ draft_rejected
 draft_sent
 ```
 
+Draft lifecycle audit events may also include reviewer/admin actor metadata inside `details_json`:
+
+```json
+{
+  "actor_user_id": "hr_reviewer_test",
+  "actor_role": "hr_reviewer"
+}
+```
+
 The API does not provide update or delete operations for audit logs.
 
 ## Failure Handling
 
 The system avoids exposing raw internal stack traces to users.
+
+Invalid draft lifecycle actions return `409 Conflict` with structured state-transition details, while missing draft IDs still return `404 Not Found`.
 
 If the LLM provider fails during specialist agent execution, the workflow returns a polite fallback response and records the failure in the audit log.
 
@@ -909,11 +1006,11 @@ The collection includes requests for health checks, HR request handling, memory 
 - LLM responses depend on the configured provider and model.
 - The current memory retrieval strategy is simple and deterministic.
 - SQLite is suitable for local development, not high-concurrency production deployment.
-- There is no authentication or role-based access control yet.
+- Authentication/RBAC is currently header-based mock auth, not production JWT/OAuth.
 - Crisis-sensitive or non-HR emergency messages are not yet handled by a dedicated Safety Agent.
 - PII and sensitive-data redaction before LLM calls is planned but not yet implemented.
 - Operational list endpoints are paginated, but deeper pagination metadata may still be expanded later.
 
 ## Project Status
 
-Core backend functionality, controlled document ingestion, traceable policy context retrieval, request persistence, memory, audit logging, email-like webhook intake, deterministic leave date handling, email-formatted draft responses, draft approval/rejection/send simulation, risk-based review metadata, filterable operational queues, pagination metadata, and automated tests are implemented.
+Core backend functionality, controlled document ingestion, traceable policy context retrieval, request persistence, memory, audit logging, email-like webhook intake, deterministic leave date handling, email-formatted draft responses, draft approval/rejection/send simulation, explicit draft state transition validation, mock RBAC for review operations, reviewer actor metadata in audit events, risk-based review metadata, filterable operational queues, pagination metadata, and automated tests are implemented.
