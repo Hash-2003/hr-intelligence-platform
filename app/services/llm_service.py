@@ -4,6 +4,7 @@ from typing import Any
 from openai import OpenAI, OpenAIError
 
 from app.config import get_settings
+from app.services.pii_redaction_service import PIIRedactionService
 
 
 class LLMServiceError(Exception):
@@ -15,6 +16,8 @@ class LLMService:
 
     def __init__(self) -> None:
         self.settings = get_settings()
+        self.pii_redaction_service = PIIRedactionService()
+        self.last_redaction_counts: dict[str, int] = {}
 
         if not self.settings.llm_api_key:
             raise LLMServiceError("LLM API key is not configured.")
@@ -32,13 +35,17 @@ class LLMService:
         user_prompt: str,
         temperature: float = 0.2,
     ) -> str:
-        """Send a chat completion request to the configured LLM provider."""
+        """Send a redacted chat completion request to the configured LLM provider."""
+        redaction_result = self.pii_redaction_service.redact(user_prompt)
+        safe_user_prompt = redaction_result.redacted_text
+        self.last_redaction_counts = redaction_result.redaction_counts
+
         try:
             response = self.client.chat.completions.create(
                 model=self.settings.llm_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
+                    {"role": "user", "content": safe_user_prompt},
                 ],
                 temperature=temperature,
             )

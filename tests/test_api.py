@@ -2396,3 +2396,197 @@ def test_hr_requests_endpoint_returns_pagination_metadata():
     assert data["limit"] == 5
     assert data["offset"] == 0
 
+def test_pii_redaction_redacts_email_addresses():
+    from app.services.pii_redaction_service import PIIRedactionService
+
+    service = PIIRedactionService()
+
+    result = service.redact(
+        "Please contact kasun.perera@example.com about this request."
+    )
+
+    assert result.redacted_text == "Please contact [EMAIL] about this request."
+    assert result.redaction_counts["EMAIL"] == 1
+    assert service.has_redactions(result) is True
+
+def test_pii_redaction_redacts_phone_numbers():
+    from app.services.pii_redaction_service import PIIRedactionService
+
+    service = PIIRedactionService()
+
+    result = service.redact(
+        "My phone number is 0771234567 and my office number is +94 77 123 4567."
+    )
+
+    assert "[PHONE]" in result.redacted_text
+    assert "0771234567" not in result.redacted_text
+    assert "+94 77 123 4567" not in result.redacted_text
+    assert result.redaction_counts["PHONE"] == 2
+
+def test_pii_redaction_redacts_phone_numbers():
+    from app.services.pii_redaction_service import PIIRedactionService
+
+    service = PIIRedactionService()
+
+    result = service.redact(
+        "My phone number is 0771234567 and my office number is +94 77 123 4567."
+    )
+
+    assert "[PHONE]" in result.redacted_text
+    assert "0771234567" not in result.redacted_text
+    assert "+94 77 123 4567" not in result.redacted_text
+    assert result.redaction_counts["PHONE"] == 2
+
+def test_pii_redaction_redacts_national_ids():
+    from app.services.pii_redaction_service import PIIRedactionService
+
+    service = PIIRedactionService()
+
+    result = service.redact(
+        "My NIC is 991234567V and my new NIC is 199912345678."
+    )
+
+    assert result.redaction_counts["NATIONAL_ID"] == 2
+    assert "991234567V" not in result.redacted_text
+    assert "199912345678" not in result.redacted_text
+    assert result.redacted_text.count("[NATIONAL_ID]") == 2
+
+def test_pii_redaction_redacts_employee_ids():
+    from app.services.pii_redaction_service import PIIRedactionService
+
+    service = PIIRedactionService()
+
+    result = service.redact(
+        "My employee id: 12345 and backup code EMP-009 should be checked."
+    )
+
+    assert result.redaction_counts["EMPLOYEE_ID"] == 2
+    assert "12345" not in result.redacted_text
+    assert "EMP-009" not in result.redacted_text
+    assert result.redacted_text.count("[EMPLOYEE_ID]") == 2
+
+def test_pii_redaction_redacts_urls_and_salary_amounts():
+    from app.services.pii_redaction_service import PIIRedactionService
+
+    service = PIIRedactionService()
+
+    result = service.redact(
+        "See https://example.com/hr and my salary is LKR 250,000."
+    )
+
+    assert result.redaction_counts["URL"] == 1
+    assert result.redaction_counts["SALARY"] == 1
+    assert "https://example.com/hr" not in result.redacted_text
+    assert "LKR 250,000" not in result.redacted_text
+    assert "[URL]" in result.redacted_text
+    assert "[SALARY]" in result.redacted_text
+
+def test_pii_redaction_preserves_non_sensitive_text():
+    from app.services.pii_redaction_service import PIIRedactionService
+
+    service = PIIRedactionService()
+
+    text = "I want to apply for annual leave next Monday."
+    result = service.redact(text)
+
+    assert result.redacted_text == text
+    assert service.has_redactions(result) is False
+    assert all(count == 0 for count in result.redaction_counts.values())
+
+def test_llm_service_redacts_user_prompt_before_provider_call(monkeypatch):
+    from app.services.llm_service import LLMService
+
+    captured_messages = {}
+
+    class MockMessage:
+        content = "Mock response."
+
+    class MockChoice:
+        message = MockMessage()
+
+    class MockResponse:
+        choices = [MockChoice()]
+
+    class MockCompletions:
+        def create(self, model, messages, temperature):
+            captured_messages["messages"] = messages
+            captured_messages["temperature"] = temperature
+            return MockResponse()
+
+    class MockChat:
+        completions = MockCompletions()
+
+    class MockClient:
+        chat = MockChat()
+
+    def mock_openai_client(*args, **kwargs):
+        return MockClient()
+
+    monkeypatch.setattr(
+        "app.services.llm_service.OpenAI",
+        mock_openai_client,
+    )
+
+    service = LLMService()
+
+    response = service.chat_completion(
+        system_prompt="You are an HR assistant.",
+        user_prompt="Contact me at kasun@example.com or 0771234567.",
+        temperature=0.1,
+    )
+
+    assert response == "Mock response."
+
+    sent_user_prompt = captured_messages["messages"][1]["content"]
+
+    assert "kasun@example.com" not in sent_user_prompt
+    assert "0771234567" not in sent_user_prompt
+    assert "[EMAIL]" in sent_user_prompt
+    assert "[PHONE]" in sent_user_prompt
+    assert service.last_redaction_counts["EMAIL"] == 1
+    assert service.last_redaction_counts["PHONE"] == 1
+
+def test_llm_service_does_not_redact_system_prompt(monkeypatch):
+    from app.services.llm_service import LLMService
+
+    captured_messages = {}
+
+    class MockMessage:
+        content = "Mock response."
+
+    class MockChoice:
+        message = MockMessage()
+
+    class MockResponse:
+        choices = [MockChoice()]
+
+    class MockCompletions:
+        def create(self, model, messages, temperature):
+            captured_messages["messages"] = messages
+            return MockResponse()
+
+    class MockChat:
+        completions = MockCompletions()
+
+    class MockClient:
+        chat = MockChat()
+
+    monkeypatch.setattr(
+        "app.services.llm_service.OpenAI",
+        lambda *args, **kwargs: MockClient(),
+    )
+
+    service = LLMService()
+
+    service.chat_completion(
+        system_prompt="System prompt with admin@example.com should remain unchanged.",
+        user_prompt="Normal HR question without PII.",
+    )
+
+    sent_system_prompt = captured_messages["messages"][0]["content"]
+    sent_user_prompt = captured_messages["messages"][1]["content"]
+
+    assert sent_system_prompt == "System prompt with admin@example.com should remain unchanged."
+    assert sent_user_prompt == "Normal HR question without PII."
+    assert service.last_redaction_counts["EMAIL"] == 0
+
