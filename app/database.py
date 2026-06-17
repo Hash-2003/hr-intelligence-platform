@@ -131,6 +131,7 @@ class AgentRun(Base):
     output_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="success")
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    pii_redaction_counts: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

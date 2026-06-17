@@ -42,6 +42,7 @@ class WorkflowState(TypedDict, total=False):
     reference_datetime: datetime | None
     source_type: str
     subject: str | None
+    pii_redaction_counts: dict[str, int] | None
 
 
 class HRWorkflow:
@@ -343,19 +344,33 @@ class HRWorkflow:
                 ),
             )
 
+            pii_redaction_counts = getattr(
+                getattr(agent, "llm_service", None),
+                "last_redaction_counts",
+                None,
+            )
+
             return {
                 **state,
                 "selected_agent": agent.name,
                 "response": response,
+                "pii_redaction_counts": pii_redaction_counts,
             }
 
         except LLMServiceError as exc:
+            pii_redaction_counts = getattr(
+                getattr(agent, "llm_service", None),
+                "last_redaction_counts",
+                None,
+            )
+
             return {
                 **state,
                 "selected_agent": agent.name,
                 "response": self._safe_failure_response(),
                 "status": "failed",
                 "error_message": str(exc),
+                "pii_redaction_counts": pii_redaction_counts,
             }
 
     def _run_scheduling_agent(self, state: WorkflowState) -> WorkflowState:
@@ -410,6 +425,7 @@ class HRWorkflow:
             response=state.get("response"),
             status=state.get("status", "success"),
             error_message=state.get("error_message"),
+            pii_redaction_counts=state.get("pii_redaction_counts"),
         )
 
         if state.get("selected_agent"):

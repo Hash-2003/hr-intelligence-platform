@@ -43,6 +43,7 @@ class AgentRunResponse(BaseModel):
     output_summary: str | None
     status: str
     error_message: str | None
+    pii_redaction_counts: str | None
     started_at: datetime
     completed_at: datetime | None
 

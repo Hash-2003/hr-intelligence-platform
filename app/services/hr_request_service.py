@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from typing import cast
+import json
 
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
@@ -79,6 +80,7 @@ class HRRequestService:
         output_summary: str | None,
         status: str,
         error_message: str | None = None,
+        pii_redaction_counts: dict[str, int] | None = None,
     ) -> AgentRun:
         """Create an agent execution record."""
         agent_run = AgentRun(
@@ -88,6 +90,11 @@ class HRRequestService:
             output_summary=output_summary,
             status=status,
             error_message=error_message,
+            pii_redaction_counts=(
+                json.dumps(pii_redaction_counts)
+                if pii_redaction_counts is not None
+                else None
+            ),
             completed_at=datetime.now(timezone.utc),
         )
 

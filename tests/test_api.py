@@ -2590,3 +2590,100 @@ def test_llm_service_does_not_redact_system_prompt(monkeypatch):
     assert sent_user_prompt == "Normal HR question without PII."
     assert service.last_redaction_counts["EMAIL"] == 0
 
+def test_create_agent_run_stores_pii_redaction_counts():
+    import json
+
+    from app.database import SessionLocal
+    from app.services.hr_request_service import HRRequestService
+
+    db = SessionLocal()
+
+    try:
+        service = HRRequestService(db)
+        request_id = str(uuid4())
+
+        service.create_request(
+            request_id=request_id,
+            user_id="pii-test-user",
+            message="Contact me at employee@example.com.",
+            source_type="api",
+        )
+
+        run = service.create_agent_run(
+            request_id=request_id,
+            agent_name="leave_agent",
+            input_summary="Input with PII.",
+            output_summary="Output summary.",
+            status="success",
+            error_message=None,
+            pii_redaction_counts={
+                "EMAIL": 1,
+                "PHONE": 0,
+                "URL": 0,
+                "NATIONAL_ID": 0,
+                "EMPLOYEE_ID": 0,
+                "SALARY": 0,
+            },
+        )
+
+        assert run.pii_redaction_counts is not None
+
+        counts = json.loads(run.pii_redaction_counts)
+
+        assert counts["EMAIL"] == 1
+        assert counts["PHONE"] == 0
+
+    finally:
+        db.close()
+
+def test_agent_run_response_includes_pii_redaction_counts():
+    import json
+
+    from app.database import SessionLocal
+    from app.services.hr_request_service import HRRequestService
+
+    db = SessionLocal()
+
+    try:
+        service = HRRequestService(db)
+        request_id = str(uuid4())
+
+        service.create_request(
+            request_id=request_id,
+            user_id="pii-api-test-user",
+            message="Contact me at employee@example.com.",
+            source_type="api",
+        )
+
+        service.create_agent_run(
+            request_id=request_id,
+            agent_name="compliance_agent",
+            input_summary="Input with PII.",
+            output_summary="Output summary.",
+            status="success",
+            error_message=None,
+            pii_redaction_counts={
+                "EMAIL": 1,
+                "PHONE": 0,
+                "URL": 0,
+                "NATIONAL_ID": 0,
+                "EMPLOYEE_ID": 0,
+                "SALARY": 0,
+            },
+        )
+
+        response = client.get(f"/hr-requests/{request_id}/agent-runs")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert len(data) == 1
+        assert data[0]["pii_redaction_counts"] is not None
+
+        counts = json.loads(data[0]["pii_redaction_counts"])
+
+        assert counts["EMAIL"] == 1
+
+    finally:
+        db.close()
+
