@@ -2,7 +2,7 @@
 
 ## Project Vision
 
-HR Intelligence Platform is an AI-powered backend platform for HR request intake, document-grounded reasoning, memory-aware agent orchestration, and auditable draft response generation.
+HR Intelligence Platform is an AI-powered backend platform for HR request intake, document-grounded reasoning, memory-aware agent orchestration, deterministic leave handling, risk-based Human-in-the-Loop review, mock RBAC-protected reviewer operations, privacy-aware LLM prompting, and auditable draft response generation.
 
 The system will evolve from a technical challenge MVP into a more complete AI engineering platform demonstrating:
 
@@ -10,8 +10,12 @@ The system will evolve from a technical challenge MVP into a more complete AI en
 - LangGraph-based multi-agent orchestration
 - HR document retrieval and extraction
 - Email/webhook-triggered request intake
+- Deterministic date-sensitive leave handling
+- Risk-based Human-in-the-Loop review
+- Mock RBAC for reviewer/admin operations
+- PII redaction before LLM provider calls
 - Structured database design
-- Auditability and human-in-the-loop review
+- Auditability and operational traceability
 - Production-oriented backend practices
 
 ---
@@ -23,14 +27,39 @@ The current system already includes:
 - FastAPI backend
 - LangGraph orchestration
 - LLM-based intent classification
+- Intent correction guardrails for high-signal HR requests
 - Scheduling, Leave, Compliance, and Clarification agents
 - Short-term and long-term memory
 - Append-only audit logs
 - SQLite persistence
 - Safe LLM failure handling
-- Pytest API tests
+- Pytest API and service tests
 - Postman collection
 - Technical documentation
+- HR request/case persistence
+- Agent run persistence
+- Controlled HR document ingestion from local policy files
+- Document chunk storage
+- Keyword-based HR policy retrieval
+- Policy source traceability for HR requests
+- Email-like webhook intake
+- Email event persistence and filtering
+- Timezone-aware datetime context through `APP_TIMEZONE`
+- Deterministic leave date fact extraction
+- Leave notice deadline validation
+- Human-reviewable draft response workflow
+- Risk-based Human-in-the-Loop review metadata
+- Draft approval, rejection, and send simulation endpoints
+- Explicit draft state transition validation with `409 Conflict` responses
+- Generic audit event metadata and draft lifecycle audit events
+- Reviewer/admin actor metadata in draft lifecycle audit events
+- Mock header-based RBAC for draft, audit, and email-event operations
+- Filterable and paginated operational list endpoints
+- Centralized domain constants and enums
+- Deterministic PII redaction service
+- LLM user prompts redacted before provider calls
+- Specialist agent PII redaction metadata persisted in `agent_runs`
+
 
 ---
 
@@ -137,6 +166,7 @@ short_term_memory
 long_term_memory
 documents
 document_chunks
+request_policy_sources
 email_events
 draft_responses
 ```
@@ -147,12 +177,13 @@ Suggested purpose of each table:
 |---|---|
 | `users` | Stores user or requester records. |
 | `hr_requests` | Stores HR cases created from API, email, or webhook input. |
-| `agent_runs` | Stores each agent execution linked to an HR request. |
+| `agent_runs` | Stores each agent execution linked to an HR request, including optional PII redaction metadata. |
 | `audit_logs` | Stores append-only trace records for observability and review. |
 | `short_term_memory` | Stores recent request context. |
 | `long_term_memory` | Stores durable user preferences and important context. |
 | `documents` | Stores uploaded or registered HR documents. |
 | `document_chunks` | Stores extracted and chunked text from documents. |
+| `request_policy_sources` | Stores policy chunks used by each HR request. |
 | `email_events` | Stores incoming email or webhook events. |
 | `draft_responses` | Stores generated responses awaiting review. |
 
@@ -185,6 +216,8 @@ Planned improvements:
 - Improved tests
 - CI workflow
 - PostgreSQL support
+- Alembic migration for `agent_runs.pii_redaction_counts`
+- Stronger privacy controls for raw email/request storage
 
 ---
 
@@ -282,7 +315,47 @@ Expected outcome:
 
 ---
 
-### Phase 6: Production Tooling
+### Phase 6: Privacy and PII Redaction
+
+Goal: minimize sensitive HR data exposure when using hosted or external LLM providers.
+
+Completed:
+
+- Added deterministic `PIIRedactionService`
+- Redacted sensitive user prompt content at the centralized `LLMService` boundary
+- Added redaction support for:
+  - email addresses
+  - phone numbers
+  - URLs
+  - Sri Lankan NIC-like national IDs
+  - employee IDs and employee numbers
+  - salary/payroll amounts
+- Tracked redaction counts in `LLMService`
+- Persisted specialist agent redaction metadata in `agent_runs.pii_redaction_counts`
+- Added tests for redaction behavior, LLM boundary redaction, and redaction metadata persistence
+
+Current design:
+
+```text
+Raw input may be stored internally for HR traceability
+    ↓
+User prompt is redacted before LLM provider call
+    ↓
+Only safe redaction count metadata is persisted for specialist agent runs
+```
+
+Remaining:
+
+- Add name and address redaction if needed
+- Add consistent pseudonymization where preserving identity relationships matters
+- Consider encrypted storage for raw HR/email content
+- Add a dedicated `llm_call_logs` table if classifier-level and auxiliary LLM-call observability is required
+- Decide whether redacted prompt snapshots are necessary or whether counts-only metadata is sufficient
+- Extend privacy tests around webhook-generated requests and high-risk HR topics
+
+---
+
+### Phase 7: Production Tooling
 
 Goal: improve deployment and maintainability.
 
@@ -316,25 +389,18 @@ Expected outcome:
 
 ## Immediate Next Step
 
-The next recommended implementation step is **PII and sensitive-data redaction before LLM calls**.
+The next recommended implementation step is **Alembic database migrations**.
 
 Rationale:
 
-The platform now has request intake, webhook intake, draft review, auditability, explicit state validation, mock RBAC, and reviewer actor traceability. The largest remaining safety and production-readiness gap is privacy handling for HR data before it is sent to an external or hosted LLM provider.
+The system now has a growing schema with operational tables, draft lifecycle states, RBAC-related audit metadata, and `agent_runs.pii_redaction_counts`. Since SQLite will not automatically update existing tables when model columns are added, migrations are becoming necessary for reliable development and deployment.
 
 Recommended first code changes:
 
-1. Add a deterministic `PIIRedactionService`.
-2. Redact common sensitive fields before LLM calls:
-   - email addresses
-   - phone numbers
-   - employee IDs
-   - national ID/NIC-like patterns
-   - URLs
-   - salary/payroll amounts where feasible
-3. Preserve raw stored records for local backend traceability while sending sanitized prompt text to the LLM.
-4. Add redaction metadata such as detected entity counts/types.
-5. Avoid storing raw sensitive LLM prompts in audit details.
-6. Add tests for redaction behavior and workflow integration.
+1. Add Alembic.
+2. Generate an initial migration from the current SQLAlchemy models.
+3. Add a migration for `agent_runs.pii_redaction_counts` if the baseline database already exists.
+4. Document migration commands in the README.
+5. Update local setup instructions so developers run migrations instead of relying only on automatic table creation.
 
-This should be implemented before real email sending, production deployment, or integration with external HR/email systems.
+This should be implemented before more schema-heavy features such as real users, production authentication, email delivery logs, or a dedicated `llm_call_logs` table.

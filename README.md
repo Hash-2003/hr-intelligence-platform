@@ -47,6 +47,10 @@ The project started as a technical challenge implementation and is now being ext
 - Mock header-based RBAC for reviewer/admin operations
 - Explicit draft state transition validation with `409 Conflict` responses for invalid lifecycle actions
 - Centralized domain constants for draft statuses, review actions, priorities, email event statuses, audit events, resource types, and roles
+- Deterministic PII redaction service for sensitive prompt preparation
+- LLM user prompts redacted before provider calls
+- PII redaction counts tracked on LLM calls
+- Specialist agent PII redaction metadata persisted in agent run records
 - Append-only audit logging
 - Safe failure handling without exposing raw Python stack traces
 - SQLite database
@@ -59,8 +63,9 @@ The project started as a technical challenge implementation and is now being ext
 - Source-aware response formatting
 - Embedding-based semantic retrieval
 - Safety Agent for crisis-sensitive or non-HR emergency messages
-- PII and sensitive-data redaction before LLM calls
 - Retry/failure tracking for webhook processing
+- Persist richer LLM-call observability beyond specialist agent runs
+- Add optional redacted prompt snapshots only if a clear audit/security need exists
 - Real email integration through n8n, Gmail, Microsoft Graph, or a mail parser
 - Docker support
 - PostgreSQL and migration support
@@ -100,9 +105,13 @@ Resolve deterministic leave date facts, if leave intent
     ↓
 Route using LangGraph conditional edges
     ↓
+Redact sensitive user prompt content before LLM provider calls
+    ↓
 Specialist agent execution
     ↓
 Save agent run record
+    ↓
+Persist PII redaction metadata for specialist agent run
     ↓
 Persist policy sources used
     ↓
@@ -466,6 +475,61 @@ LLM_BASE_URL=https://api.groq.com/openai/v1
 
 A deterministic backend service handles leave-date calculation, so the LLM is mainly used for intent classification, policy-grounded explanation, and response generation.
 
+## PII Redaction Before LLM Calls
+
+The platform includes a deterministic PII redaction layer at the centralized `LLMService` boundary.
+
+Current behavior:
+
+```text
+Raw request/email text may be stored internally for HR traceability
+    ↓
+User prompt text is redacted before being sent to the LLM provider
+    ↓
+The LLM receives sanitized prompt content
+    ↓
+Redaction counts are tracked for debugging and auditability
+    ↓
+Specialist agent run records persist redaction metadata
+```
+
+Currently redacted patterns include:
+
+```text
+email addresses → [EMAIL]
+phone numbers → [PHONE]
+URLs → [URL]
+Sri Lankan NIC-like national IDs → [NATIONAL_ID]
+employee IDs / employee numbers → [EMPLOYEE_ID]
+salary/payroll amounts → [SALARY]
+```
+
+The system does not store the full redacted prompt as an audit artifact yet. Instead, it stores safe metadata on specialist agent runs using `pii_redaction_counts`.
+
+Example stored metadata:
+
+```json
+{
+  "EMAIL": 1,
+  "PHONE": 1,
+  "URL": 0,
+  "NATIONAL_ID": 0,
+  "EMPLOYEE_ID": 0,
+  "SALARY": 0
+}
+```
+
+This provides privacy observability without duplicating sensitive prompt content in logs.
+
+Current scope note:
+
+```text
+PII redaction currently protects centralized LLM user-prompt calls.
+The original HR request or email event can still be stored in the backend for HR reviewer traceability.
+```
+
+Future improvements may include name detection, address detection, consistent pseudonymization, encrypted raw-message storage, and a dedicated `llm_call_logs` table for classifier-level and agent-level observability.
+
 ## Run the Application
 
 ```powershell
@@ -717,6 +781,19 @@ GET /hr-requests/{request_id}/agent-runs
 
 This returns specialist agent execution records linked to the HR request.
 
+Agent run responses include optional PII redaction metadata when available:
+
+```json
+{
+  "agent_name": "leave_agent",
+  "status": "success",
+  "pii_redaction_counts": "{\"EMAIL\": 1, \"PHONE\": 0, \"URL\": 0, \"NATIONAL_ID\": 0, \"EMPLOYEE_ID\": 0, \"SALARY\": 0}"
+}
+```
+
+This metadata records redaction counts only. It does not expose the raw sensitive values or the full prompt sent to the model.
+
+
 ### Retrieve Policy Sources Used by a Request
 
 ```http
@@ -959,6 +1036,8 @@ Draft lifecycle audit events may also include reviewer/admin actor metadata insi
 }
 ```
 
+PII redaction metadata is stored on specialist agent run records, not as raw prompt text in audit details.
+
 The API does not provide update or delete operations for audit logs.
 
 ## Failure Handling
@@ -1008,9 +1087,10 @@ The collection includes requests for health checks, HR request handling, memory 
 - SQLite is suitable for local development, not high-concurrency production deployment.
 - Authentication/RBAC is currently header-based mock auth, not production JWT/OAuth.
 - Crisis-sensitive or non-HR emergency messages are not yet handled by a dedicated Safety Agent.
-- PII and sensitive-data redaction before LLM calls is planned but not yet implemented.
+- PII redaction is deterministic and pattern-based; it does not yet detect all names, addresses, or free-form sensitive details.
+- Redaction metadata is currently persisted for specialist agent runs, not every classifier or auxiliary LLM call.
 - Operational list endpoints are paginated, but deeper pagination metadata may still be expanded later.
 
 ## Project Status
 
-Core backend functionality, controlled document ingestion, traceable policy context retrieval, request persistence, memory, audit logging, email-like webhook intake, deterministic leave date handling, email-formatted draft responses, draft approval/rejection/send simulation, explicit draft state transition validation, mock RBAC for review operations, reviewer actor metadata in audit events, risk-based review metadata, filterable operational queues, pagination metadata, and automated tests are implemented.
+Core backend functionality, controlled document ingestion, traceable policy context retrieval, request persistence, memory, audit logging, email-like webhook intake, deterministic leave date handling, email-formatted draft responses, draft approval/rejection/send simulation, explicit draft state transition validation, mock RBAC for review operations, reviewer actor metadata in audit events, deterministic PII redaction before LLM calls, persisted PII redaction metadata for specialist agent runs, risk-based review metadata, filterable operational queues, pagination metadata, and automated tests are implemented.
